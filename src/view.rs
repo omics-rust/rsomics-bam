@@ -1,5 +1,5 @@
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use noodles::core;
@@ -12,7 +12,7 @@ use rsomics_common::{Result, RsomicsError};
 use serde::Serialize;
 
 use crate::{
-    filter::{Filter, ReadGroupFilter},
+    filter::{Filter, QnameFilter, ReadGroupFilter},
     input, md, output,
 };
 
@@ -92,6 +92,7 @@ pub struct Options<'a> {
     pub include_flags: u16,
     pub exclude_all_flags: u16,
     pub read_groups: &'a [String],
+    pub qname_files: &'a [PathBuf],
     pub minimum_mapping_quality: u8,
     pub minimum_query_length: u64,
     pub add_flags: u16,
@@ -127,6 +128,7 @@ where
                 .to_owned(),
         ));
     }
+    let qnames = QnameFilter::from_files(options.qname_files)?;
 
     let input_threads = if parallel_output {
         0
@@ -152,6 +154,7 @@ where
         include_any: options.include_flags,
         exclude_all: options.exclude_all_flags,
         read_groups: read_groups.as_ref(),
+        qnames: qnames.as_ref(),
         minimum_mapping_quality: options.minimum_mapping_quality,
         minimum_query_length: options.minimum_query_length,
     };

@@ -466,6 +466,85 @@ fn view_filters_records_and_headers_by_read_group() {
 }
 
 #[test]
+fn view_filters_by_read_names_from_files() {
+    let directory = tempfile::tempdir().unwrap();
+    let read1 = directory.path().join("read1.txt");
+    let read2 = directory.path().join("read2.txt");
+    fs::write(&read1, b"read1\tread1\n").unwrap();
+    fs::write(&read2, b"unmapped\n").unwrap();
+    let input = golden("records.sam");
+
+    assert_eq!(
+        run_ours(&[
+            "view",
+            "-c",
+            "-N",
+            read1.to_str().unwrap(),
+            input.to_str().unwrap(),
+        ])
+        .stdout,
+        b"2\n"
+    );
+    assert_eq!(
+        run_ours(&[
+            "view",
+            "-c",
+            "-N",
+            read1.to_str().unwrap(),
+            "-N",
+            read2.to_str().unwrap(),
+            input.to_str().unwrap(),
+        ])
+        .stdout,
+        b"3\n"
+    );
+
+    let excluded = format!("^{}", read1.display());
+    assert_eq!(
+        run_ours(&["view", "-c", "-N", &excluded, input.to_str().unwrap(),]).stdout,
+        b"1\n"
+    );
+
+    let mixed = binary()
+        .args(["view", "-c", "-N"])
+        .arg(&read1)
+        .args(["-N", &excluded])
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(!mixed.status.success());
+    assert!(
+        String::from_utf8_lossy(&mixed.stderr)
+            .contains("cannot mix include and exclude read-name files")
+    );
+
+    let missing = binary()
+        .args(["view", "-c", "-N"])
+        .arg(directory.path().join("missing.txt"))
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(!missing.status.success());
+    assert!(String::from_utf8_lossy(&missing.stderr).contains("opening read-name file"));
+
+    let unnamed = directory.path().join("unnamed.sam");
+    let star = directory.path().join("star.txt");
+    fs::write(&unnamed, b"@HD\tVN:1.6\n*\t4\t*\t0\t0\t*\t*\t0\t0\t*\t*\n").unwrap();
+    fs::write(&star, b"*\n").unwrap();
+    assert_eq!(
+        run_ours(&[
+            "view",
+            "-c",
+            "-N",
+            star.to_str().unwrap(),
+            unnamed.to_str().unwrap(),
+        ])
+        .stdout,
+        b"1\n"
+    );
+}
+
+#[test]
 fn view_changes_flags_after_filtering() {
     let input = golden("records.sam");
     let changed = String::from_utf8(
@@ -1307,6 +1386,95 @@ fn view_read_group_filters_match_samtools_1_24() {
                 input.display()
             );
         }
+    }
+}
+
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn view_qname_files_match_samtools_1_24() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let inputs = build_alignment_set(directory.path());
+    let read1 = directory.path().join("read1.txt");
+    let read2 = directory.path().join("read2.txt");
+    fs::write(&read1, b"read1\n").unwrap();
+    fs::write(&read2, b"unmapped\n").unwrap();
+    let excluded = format!("^{}", read1.display());
+
+    for (position, input) in [&inputs.sam, &inputs.bam, &inputs.cram]
+        .into_iter()
+        .enumerate()
+    {
+        for names in [
+            vec![read1.to_str().unwrap()],
+            vec![read1.to_str().unwrap(), read2.to_str().unwrap()],
+            vec![excluded.as_str()],
+        ] {
+            let mut ours = vec!["view", "--no-PG"];
+            let mut oracle = ours.clone();
+            for names in &names {
+                ours.extend(["-N", names]);
+                oracle.extend(["-N", names]);
+            }
+            if input == &inputs.cram {
+                ours.extend(["-T", inputs.reference.to_str().unwrap()]);
+                oracle.extend(["-T", inputs.reference.to_str().unwrap()]);
+            }
+            ours.push(input.to_str().unwrap());
+            oracle.push(input.to_str().unwrap());
+            assert_eq!(
+                run_ours(&ours).stdout,
+                run_samtools(&oracle).stdout,
+                "{} names={names:?}",
+                input.display()
+            );
+
+            ours.insert(2, "-c");
+            oracle.insert(2, "-c");
+            assert_eq!(
+                run_ours(&ours).stdout,
+                run_samtools(&oracle).stdout,
+                "{} count names={names:?}",
+                input.display()
+            );
+        }
+
+        let ours_bam = directory.path().join(format!("ours-qname-{position}.bam"));
+        let oracle_bam = directory
+            .path()
+            .join(format!("oracle-qname-{position}.bam"));
+        let mut ours = vec![
+            "view",
+            "--no-PG",
+            "-b",
+            "-N",
+            read1.to_str().unwrap(),
+            "-o",
+            ours_bam.to_str().unwrap(),
+        ];
+        let mut oracle = vec![
+            "view",
+            "--no-PG",
+            "-b",
+            "-N",
+            read1.to_str().unwrap(),
+            "-o",
+            oracle_bam.to_str().unwrap(),
+        ];
+        if input == &inputs.cram {
+            ours.extend(["-T", inputs.reference.to_str().unwrap()]);
+            oracle.extend(["-T", inputs.reference.to_str().unwrap()]);
+        }
+        ours.push(input.to_str().unwrap());
+        oracle.push(input.to_str().unwrap());
+        run_ours(&ours);
+        run_samtools(&oracle);
+        assert_eq!(
+            run_samtools(&["view", "--no-PG", "-h", ours_bam.to_str().unwrap()]).stdout,
+            run_samtools(&["view", "--no-PG", "-h", oracle_bam.to_str().unwrap()]).stdout,
+            "{} BAM output",
+            input.display()
+        );
     }
 }
 

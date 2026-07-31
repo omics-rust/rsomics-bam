@@ -1,9 +1,14 @@
 use std::collections::HashSet;
+use std::ffi::OsString;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
+use std::path::{Path, PathBuf};
 
 use noodles::sam::alignment::Record;
 use noodles::sam::alignment::record::data::field::{Tag, Value};
 use rsomics_bamio::raw::RecordRef;
-use rsomics_common::{Result, RsomicsError};
+use rsomics_common::{Context, Result, RsomicsError};
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct ReadGroupFilter {
@@ -65,6 +70,77 @@ impl ReadGroupFilter {
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) struct QnameFilter {
+    names: HashSet<Vec<u8>>,
+    exclude: bool,
+}
+
+impl QnameFilter {
+    pub(crate) fn from_files(files: &[PathBuf]) -> Result<Option<Self>> {
+        let Some(first) = files.first() else {
+            return Ok(None);
+        };
+        let (exclude, _) = qname_file(first);
+        let mut names = HashSet::new();
+
+        for file in files {
+            let (file_excludes, path) = qname_file(file);
+            if file_excludes != exclude {
+                return Err(RsomicsError::ConfigError(
+                    "cannot mix include and exclude read-name files".to_owned(),
+                ));
+            }
+            read_names(&path, &mut names)?;
+        }
+
+        Ok(Some(Self { names, exclude }))
+    }
+
+    fn accepts(&self, record: &dyn Record) -> bool {
+        self.accepts_name(record.name().map_or(b"*".as_slice(), AsRef::as_ref))
+    }
+
+    fn accepts_raw(&self, record: &RecordRef<'_>) -> bool {
+        self.accepts_name(record.name())
+    }
+
+    fn accepts_name(&self, name: &[u8]) -> bool {
+        self.names.contains(name) != self.exclude
+    }
+}
+
+fn qname_file(file: &Path) -> (bool, PathBuf) {
+    let bytes = file.as_os_str().as_bytes();
+    match bytes.strip_prefix(b"^") {
+        Some(path) => (true, OsString::from_vec(path.to_vec()).into()),
+        None => (false, file.to_owned()),
+    }
+}
+
+fn read_names(path: &Path, names: &mut HashSet<Vec<u8>>) -> Result<()> {
+    let file = File::open(path)
+        .rs_with_context(|| format!("opening read-name file {}", path.display()))?;
+    let mut reader = BufReader::new(file);
+    let mut line = Vec::new();
+
+    loop {
+        line.clear();
+        if reader
+            .read_until(b'\n', &mut line)
+            .rs_with_context(|| format!("reading read-name file {}", path.display()))?
+            == 0
+        {
+            return Ok(());
+        }
+        names.extend(
+            line.split(|byte| byte.is_ascii_whitespace())
+                .filter(|name| !name.is_empty())
+                .map(<[u8]>::to_vec),
+        );
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct Filter<'a> {
     pub require_all: u16,
@@ -72,6 +148,7 @@ pub(crate) struct Filter<'a> {
     pub include_any: u16,
     pub exclude_all: u16,
     pub read_groups: Option<&'a ReadGroupFilter>,
+    pub qnames: Option<&'a QnameFilter>,
     pub minimum_mapping_quality: u8,
     pub minimum_query_length: u64,
 }
@@ -103,6 +180,11 @@ impl Filter<'_> {
         {
             return Ok(false);
         }
+        if let Some(qnames) = self.qnames
+            && !qnames.accepts(record)
+        {
+            return Ok(false);
+        }
         if self.minimum_query_length == 0 {
             return Ok(true);
         }
@@ -118,6 +200,11 @@ impl Filter<'_> {
         }
         if let Some(read_groups) = self.read_groups
             && !read_groups.accepts_raw(record)?
+        {
+            return Ok(false);
+        }
+        if let Some(qnames) = self.qnames
+            && !qnames.accepts_raw(record)
         {
             return Ok(false);
         }
@@ -176,6 +263,7 @@ mod tests {
             include_any: 0xc0,
             exclude_all: 0x30,
             read_groups: None,
+            qnames: None,
             minimum_mapping_quality: 20,
             minimum_query_length: 0,
         };
@@ -249,6 +337,7 @@ mod tests {
             include_any: 0xc0,
             exclude_all: 0x30,
             read_groups: None,
+            qnames: None,
             minimum_mapping_quality: 20,
             minimum_query_length: 0,
         };
