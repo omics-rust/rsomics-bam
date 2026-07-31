@@ -702,6 +702,7 @@ name = "rsomics-bam"
 version = "0.3.0"
 dependencies = [
  "clap",
+ "libc",
  "rsomics-common",
  "rsomics-help",
  "rust-htslib",

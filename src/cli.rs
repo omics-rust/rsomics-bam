@@ -6,7 +6,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use rsomics_common::{OutputArgs, Result, RsomicsError, ToolMeta, run as run_tool};
 use serde::Serialize;
 
-use crate::{flags, flagstat};
+use crate::{flags, flagstat, head};
 
 const META: ToolMeta = ToolMeta {
     name: "rsomics-bam",
@@ -34,6 +34,8 @@ enum Command {
     Flags(FlagsArgs),
     /// Count alignments by SAM flag category
     Flagstat(FlagstatArgs),
+    /// Print header lines and the first alignments as SAM
+    Head(HeadArgs),
 }
 
 #[derive(Debug, Args)]
@@ -70,11 +72,35 @@ struct FlagstatArgs {
     threads: usize,
 }
 
+#[derive(Debug, Args)]
+struct HeadArgs {
+    /// Input SAM, BAM, or CRAM file; omit or use - for standard input
+    #[arg(value_name = "ALIGNMENT", default_value = "-")]
+    input: PathBuf,
+
+    /// Print at most this many header lines
+    #[arg(short = 'H', long, value_name = "INT")]
+    headers: Option<usize>,
+
+    /// Print at most this many alignment records
+    #[arg(short = 'n', long, value_name = "INT", default_value_t = 0)]
+    records: usize,
+
+    /// Reference FASTA for CRAM decoding
+    #[arg(short = 'T', long, value_name = "FASTA")]
+    reference: Option<PathBuf>,
+
+    /// Additional alignment decompression threads
+    #[arg(short = '@', long, value_name = "INT", default_value_t = 0)]
+    threads: usize,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(tag = "command", rename_all = "kebab-case")]
 enum CommandOutput {
     Flags { values: Vec<flags::FlagValue> },
     Flagstat { counts: Box<flagstat::Counts> },
+    Head { summary: head::Summary },
 }
 
 #[must_use]
@@ -88,6 +114,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
     match cli.command {
         Command::Flags(arguments) => execute_flags(arguments, cli.output.json),
         Command::Flagstat(arguments) => execute_flagstat(arguments, cli.output.json),
+        Command::Head(arguments) => execute_head(arguments, cli.output.json),
     }
 }
 
@@ -164,6 +191,27 @@ fn execute_flagstat(arguments: FlagstatArgs, json: bool) -> Result<CommandOutput
     Ok(CommandOutput::Flagstat {
         counts: Box::new(counts),
     })
+}
+
+fn execute_head(arguments: HeadArgs, json: bool) -> Result<CommandOutput> {
+    if json {
+        return Err(RsomicsError::ConfigError(
+            "--json cannot be combined with SAM stream output".to_owned(),
+        ));
+    }
+
+    let summary = head::write(
+        &arguments.input,
+        head::Options {
+            header_lines: arguments.headers,
+            records: arguments.records,
+            reference: arguments.reference.as_deref(),
+            additional_threads: arguments.threads,
+        },
+        io::stdout().lock(),
+    )?;
+
+    Ok(CommandOutput::Head { summary })
 }
 
 #[cfg(test)]

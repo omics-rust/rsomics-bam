@@ -6,6 +6,7 @@ The current development slice contains:
 
 - `rsomics-bam flags`
 - `rsomics-bam flagstat`
+- `rsomics-bam head`
 
 Commands are added only after their behavior and failure modes are verified
 against samtools 1.24. The crate is not yet released.

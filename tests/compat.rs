@@ -42,6 +42,46 @@ fn assert_samtools_1_24() {
     assert!(version.starts_with("samtools 1.24\n"), "{version}");
 }
 
+struct AlignmentSet {
+    sam: PathBuf,
+    bam: PathBuf,
+    cram: PathBuf,
+    reference: PathBuf,
+}
+
+fn build_alignment_set(directory: &Path) -> AlignmentSet {
+    let sam = golden("records.sam");
+    let reference = directory.join("reference.fa");
+    let bam = directory.join("records.bam");
+    let cram = directory.join("records.cram");
+    fs::copy(golden("reference.fa"), &reference).unwrap();
+
+    run_samtools(&["faidx", reference.to_str().unwrap()]);
+    run_samtools(&[
+        "view",
+        "-b",
+        "-o",
+        bam.to_str().unwrap(),
+        sam.to_str().unwrap(),
+    ]);
+    run_samtools(&[
+        "view",
+        "-C",
+        "-T",
+        reference.to_str().unwrap(),
+        "-o",
+        cram.to_str().unwrap(),
+        sam.to_str().unwrap(),
+    ]);
+
+    AlignmentSet {
+        sam,
+        bam,
+        cram,
+        reference,
+    }
+}
+
 #[test]
 fn flagstat_matches_committed_samtools_text() {
     let input = golden("flagstat-small.bam");
@@ -106,6 +146,41 @@ fn domain_and_envelope_json_are_not_mixed() {
 }
 
 #[test]
+fn head_defaults_to_header_only() {
+    let input = golden("records.sam");
+    let output = run_ours(&["head", input.to_str().unwrap()]);
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(
+        text,
+        "@HD\tVN:1.6\tSO:coordinate\n@SQ\tSN:chr1\tLN:40\n@RG\tID:rg1\tSM:sample-a\n"
+    );
+}
+
+#[test]
+fn head_limits_headers_and_records() {
+    let input = golden("records.sam");
+    let output = run_ours(&["head", "-H", "1", "-n", "2", input.to_str().unwrap()]);
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(text.lines().count(), 3, "{text}");
+    assert!(text.starts_with("@HD\tVN:1.6\tSO:coordinate\n"), "{text}");
+    assert!(text.contains("read1\t99\tchr1\t1\t60\t8M"), "{text}");
+    assert!(text.contains("read1\t147\tchr1\t17\t60\t8M"), "{text}");
+}
+
+#[test]
+fn head_rejects_json_stream_mixing() {
+    let input = golden("records.sam");
+    let output = binary()
+        .args(["--json", "head"])
+        .arg(input)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(value["status"], "error");
+}
+
+#[test]
 #[ignore = "release oracle: requires samtools 1.24"]
 fn flags_match_samtools_1_24() {
     assert_samtools_1_24();
@@ -130,36 +205,14 @@ fn flags_match_samtools_1_24() {
 fn flagstat_matches_samtools_1_24_for_sam_bam_and_cram() {
     assert_samtools_1_24();
     let directory = tempfile::tempdir().unwrap();
-    let sam = golden("records.sam");
-    let reference = directory.path().join("reference.fa");
-    let bam = directory.path().join("records.bam");
-    let cram = directory.path().join("records.cram");
-    fs::copy(golden("reference.fa"), &reference).unwrap();
+    let inputs = build_alignment_set(directory.path());
 
-    run_samtools(&["faidx", reference.to_str().unwrap()]);
-    run_samtools(&[
-        "view",
-        "-b",
-        "-o",
-        bam.to_str().unwrap(),
-        sam.to_str().unwrap(),
-    ]);
-    run_samtools(&[
-        "view",
-        "-C",
-        "-T",
-        reference.to_str().unwrap(),
-        "-o",
-        cram.to_str().unwrap(),
-        sam.to_str().unwrap(),
-    ]);
-
-    for input in [&sam, &bam, &cram] {
+    for input in [&inputs.sam, &inputs.bam, &inputs.cram] {
         for format in ["text", "tsv", "json"] {
             let mut our_arguments =
                 vec!["flagstat", "--output-fmt", format, input.to_str().unwrap()];
-            if input == &cram {
-                our_arguments.splice(1..1, ["--reference", reference.to_str().unwrap()]);
+            if input == &inputs.cram {
+                our_arguments.splice(1..1, ["--reference", inputs.reference.to_str().unwrap()]);
             }
             let ours = run_ours(&our_arguments);
             let oracle =
@@ -171,6 +224,41 @@ fn flagstat_matches_samtools_1_24_for_sam_bam_and_cram() {
             } else {
                 assert_eq!(ours.stdout, oracle.stdout, "{} {format}", input.display());
             }
+        }
+    }
+}
+
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn head_matches_samtools_1_24_for_sam_bam_and_cram() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let inputs = build_alignment_set(directory.path());
+
+    for input in [&inputs.sam, &inputs.bam, &inputs.cram] {
+        for (our_options, oracle_options) in [
+            (vec![], vec![]),
+            (vec!["-H", "1"], vec!["-h", "1"]),
+            (vec!["-H", "2", "-n", "2"], vec!["-h", "2", "-n", "2"]),
+            (vec!["-H", "0", "-n", "3"], vec!["-h", "0", "-n", "3"]),
+        ] {
+            let mut our_arguments = vec!["head"];
+            our_arguments.extend(our_options);
+            if input == &inputs.cram {
+                our_arguments.extend(["--reference", inputs.reference.to_str().unwrap()]);
+            }
+            our_arguments.push(input.to_str().unwrap());
+
+            let mut oracle_arguments = vec!["head"];
+            oracle_arguments.extend(oracle_options);
+            if input == &inputs.cram {
+                oracle_arguments.extend(["-T", inputs.reference.to_str().unwrap()]);
+            }
+            oracle_arguments.push(input.to_str().unwrap());
+
+            let ours = run_ours(&our_arguments);
+            let oracle = run_samtools(&oracle_arguments);
+            assert_eq!(ours.stdout, oracle.stdout, "{}", input.display());
         }
     }
 }
