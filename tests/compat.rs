@@ -13,6 +13,13 @@ fn golden(name: &str) -> PathBuf {
         .join(name)
 }
 
+fn appended_extension(path: &Path, extension: &str) -> PathBuf {
+    let mut path = path.as_os_str().to_owned();
+    path.push(".");
+    path.push(extension);
+    PathBuf::from(path)
+}
+
 fn run(mut command: Command) -> Output {
     let output = command.output().expect("spawn command");
     assert!(
@@ -331,6 +338,95 @@ fn view_writes_finished_bam_by_flag_and_extension() {
                 .is_empty()
         );
     }
+}
+
+#[test]
+fn view_queries_indexed_regions_in_order() {
+    let directory = tempfile::tempdir().unwrap();
+    let bam = directory.path().join("records.bam");
+    run_ours(&[
+        "view",
+        "-b",
+        "-o",
+        bam.to_str().unwrap(),
+        golden("records.sam").to_str().unwrap(),
+    ]);
+    let index = noodles::bam::fs::index(&bam).unwrap();
+    noodles::bam::bai::fs::write(bam.with_extension("bai"), &index).unwrap();
+
+    let output = run_ours(&[
+        "view",
+        bam.to_str().unwrap(),
+        "chr1:1-20",
+        "chr1:17-24",
+        "*",
+    ]);
+    let rows = String::from_utf8(output.stdout).unwrap();
+    let names_and_positions = rows
+        .lines()
+        .map(|line| {
+            let mut fields = line.split('\t');
+            (
+                fields.next().unwrap().to_owned(),
+                fields.nth(2).unwrap().to_owned(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names_and_positions,
+        [
+            ("read1".to_owned(), "1".to_owned()),
+            ("read1".to_owned(), "17".to_owned()),
+            ("read1".to_owned(), "17".to_owned()),
+            ("unmapped".to_owned(), "0".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn view_header_only_does_not_require_a_region_index() {
+    let directory = tempfile::tempdir().unwrap();
+    let bam = directory.path().join("records.bam");
+    run_ours(&[
+        "view",
+        "-b",
+        "-o",
+        bam.to_str().unwrap(),
+        golden("records.sam").to_str().unwrap(),
+    ]);
+
+    let output = run_ours(&["view", "-H", bam.to_str().unwrap(), "chr1:1-8"]);
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .starts_with("@HD\t")
+    );
+}
+
+#[test]
+fn view_region_requires_an_index() {
+    let directory = tempfile::tempdir().unwrap();
+    let bam = directory.path().join("records.bam");
+    run_ours(&[
+        "view",
+        "-b",
+        "-o",
+        bam.to_str().unwrap(),
+        golden("records.sam").to_str().unwrap(),
+    ]);
+
+    let output = binary()
+        .args(["view"])
+        .arg(&bam)
+        .arg("chr1:1-8")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("opening indexed alignment input"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
@@ -758,6 +854,52 @@ fn view_bam_output_matches_samtools_1_24_for_sam_bam_and_cram() {
         let oracle = run_samtools(&["view", "--no-PG", "-h", oracle_path.to_str().unwrap()]);
         assert_eq!(ours.stdout, oracle.stdout, "{}", input.display());
     }
+}
+
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn view_regions_match_samtools_1_24_for_bam_and_cram() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let inputs = build_alignment_set(directory.path());
+    run_samtools(&["index", inputs.bam.to_str().unwrap()]);
+    let alternative_crai = inputs.cram.with_extension("crai");
+    run_samtools(&[
+        "index",
+        "-o",
+        alternative_crai.to_str().unwrap(),
+        inputs.cram.to_str().unwrap(),
+    ]);
+
+    for input in [&inputs.bam, &inputs.cram] {
+        let mut ours = vec!["view"];
+        let mut oracle = vec!["view", "--no-PG"];
+        if input == &inputs.cram {
+            ours.extend(["-T", inputs.reference.to_str().unwrap()]);
+            oracle.extend(["-T", inputs.reference.to_str().unwrap()]);
+        }
+        ours.push(input.to_str().unwrap());
+        oracle.push(input.to_str().unwrap());
+        ours.extend(["chr1:1-20", "chr1:17-24", "*"]);
+        oracle.extend(["chr1:1-20", "chr1:17-24", "*"]);
+
+        assert_eq!(
+            run_ours(&ours).stdout,
+            run_samtools(&oracle).stdout,
+            "{}",
+            input.display()
+        );
+    }
+
+    fs::rename(
+        appended_extension(&inputs.bam, "bai"),
+        directory.path().join("saved.bai"),
+    )
+    .unwrap();
+    run_samtools(&["index", "-c", inputs.bam.to_str().unwrap()]);
+    let ours = run_ours(&["view", inputs.bam.to_str().unwrap(), "chr1:1-8"]);
+    let oracle = run_samtools(&["view", "--no-PG", inputs.bam.to_str().unwrap(), "chr1:1-8"]);
+    assert_eq!(ours.stdout, oracle.stdout);
 }
 
 #[test]

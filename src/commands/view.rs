@@ -17,8 +17,12 @@ enum Format {
 #[command(disable_help_flag = true)]
 pub(crate) struct Arguments {
     /// Input SAM, BAM, or CRAM file; omit or use - for standard input
-    #[arg(value_name = "ALIGNMENT", default_value = "-")]
-    input: PathBuf,
+    #[arg(value_name = "ALIGNMENT")]
+    input: Option<PathBuf>,
+
+    /// Indexed region such as chr1:1-100 or * for unmapped records
+    #[arg(index = 2, value_name = "REGION", value_parser = parse_region)]
+    regions: Vec<view::Region>,
 
     /// Include the SAM header
     #[arg(short = 'h', long, conflicts_with = "header_only")]
@@ -105,14 +109,16 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
         output_format: output_format(&arguments),
         reference: arguments.reference.as_deref(),
         additional_threads: arguments.threads,
+        regions: &arguments.regions,
     };
+    let input = arguments.input.as_deref().unwrap_or_else(|| Path::new("-"));
 
     let summary = if json {
-        view::write(&arguments.input, options, io::sink())?
-    } else if let Some(path) = arguments.output {
-        run_to_path(&arguments.input, options, &path)?
+        view::write(input, options, io::sink())?
+    } else if let Some(path) = arguments.output.as_deref() {
+        run_to_path(input, options, path)?
     } else {
-        run_to(&arguments.input, options, io::stdout().lock())?
+        run_to(input, options, io::stdout().lock())?
     };
 
     Ok(CommandOutput::View { summary })
@@ -170,6 +176,10 @@ fn run_to_path(input: &Path, options: view::Options<'_>, output: &Path) -> Resul
 
 fn parse_flags(value: &str) -> std::result::Result<u16, String> {
     flags::parse(value).map_err(|error| error.to_string())
+}
+
+fn parse_region(value: &str) -> std::result::Result<view::Region, String> {
+    value.parse()
 }
 
 fn output_format(arguments: &Arguments) -> view::Format {
