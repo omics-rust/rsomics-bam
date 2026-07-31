@@ -362,6 +362,110 @@ fn view_filters_by_query_length() {
 }
 
 #[test]
+fn view_filters_records_and_headers_by_read_group() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("read-groups.sam");
+    fs::write(
+        &input,
+        b"@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:40\n@RG\tID:rg1\tSM:a\n@RG\tID:rg2\tSM:b\n\
+          r1\t0\tchr1\t1\t60\t1M\t*\t0\t0\tA\tI\tRG:Z:rg1\n\
+          r2\t0\tchr1\t2\t60\t1M\t*\t0\t0\tC\tI\tRG:Z:rg2\n\
+          r3\t0\tchr1\t3\t60\t1M\t*\t0\t0\tG\tI\n",
+    )
+    .unwrap();
+
+    let selected = String::from_utf8(
+        run_ours(&[
+            "view",
+            "-h",
+            "--no-PG",
+            "-r",
+            "rg1",
+            input.to_str().unwrap(),
+        ])
+        .stdout,
+    )
+    .unwrap();
+    assert!(selected.contains("@RG\tID:rg1\t"));
+    assert!(!selected.contains("@RG\tID:rg2\t"));
+    assert!(selected.contains("\nr1\t"));
+    assert!(!selected.contains("\nr2\t"));
+    assert!(selected.contains("\nr3\t"));
+
+    assert_eq!(
+        run_ours(&[
+            "view",
+            "-c",
+            "-r",
+            "rg1",
+            "-r",
+            "rg2",
+            input.to_str().unwrap(),
+        ])
+        .stdout,
+        b"3\n"
+    );
+
+    let bam = directory.path().join("read-groups.bam");
+    let filtered_bam = directory.path().join("filtered.bam");
+    run_ours(&[
+        "view",
+        "--no-PG",
+        "-b",
+        "-o",
+        bam.to_str().unwrap(),
+        input.to_str().unwrap(),
+    ]);
+    run_ours(&[
+        "view",
+        "--no-PG",
+        "-b",
+        "-r",
+        "rg1",
+        "-o",
+        filtered_bam.to_str().unwrap(),
+        bam.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        run_ours(&["view", "--no-PG", "-h", filtered_bam.to_str().unwrap()]).stdout,
+        selected.as_bytes()
+    );
+
+    let invalid_sam = directory.path().join("invalid-read-group.sam");
+    fs::write(
+        &invalid_sam,
+        b"@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:40\nr1\t0\tchr1\t1\t60\t1M\t*\t0\t0\tA\tI\tRG:i:1\n",
+    )
+    .unwrap();
+
+    let invalid_bam = directory.path().join("invalid-read-group.bam");
+    let mut writer = noodles::bam::io::Writer::new(File::create(&invalid_bam).unwrap());
+    writer
+        .write_header(&noodles::sam::Header::default())
+        .unwrap();
+    let mut record = rsomics_bamio::raw::RawRecord::default();
+    record
+        .append_aux(*b"RG", b'i', &1i32.to_le_bytes())
+        .unwrap();
+    rsomics_bamio::raw::write_record(writer.get_mut(), &record).unwrap();
+    writer.try_finish().unwrap();
+
+    for invalid in [invalid_sam, invalid_bam] {
+        let failed = binary()
+            .args(["view", "-c", "-r", "rg1"])
+            .arg(invalid)
+            .output()
+            .unwrap();
+        assert!(!failed.status.success());
+        assert!(
+            String::from_utf8_lossy(&failed.stderr).contains("RG tag must be a string"),
+            "{}",
+            String::from_utf8_lossy(&failed.stderr)
+        );
+    }
+}
+
+#[test]
 fn view_rejects_ambiguous_count_outputs() {
     let directory = tempfile::tempdir().unwrap();
     let output = directory.path().join("output.sam");
@@ -1101,6 +1205,51 @@ fn view_minimum_query_length_matches_samtools_1_24() {
                 run_ours(&ours).stdout,
                 run_samtools(&oracle).stdout,
                 "{} minimum={minimum}",
+                input.display()
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn view_read_group_filters_match_samtools_1_24() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let inputs = build_alignment_set(directory.path());
+
+    for input in [&inputs.sam, &inputs.bam, &inputs.cram] {
+        for filter in [
+            &["-r", "rg1"][..],
+            &["-r", "missing"][..],
+            &["-r", "rg1", "-r", "missing"][..],
+        ] {
+            let mut ours = vec!["view", "--no-PG", "-h"];
+            let mut oracle = vec!["view", "--no-PG", "-h"];
+            ours.extend(filter.iter().copied());
+            oracle.extend(filter.iter().copied());
+            if input == &inputs.cram {
+                ours.extend(["-T", inputs.reference.to_str().unwrap()]);
+                oracle.extend(["-T", inputs.reference.to_str().unwrap()]);
+            }
+            ours.push(input.to_str().unwrap());
+            oracle.push(input.to_str().unwrap());
+
+            assert_eq!(
+                run_ours(&ours).stdout,
+                run_samtools(&oracle).stdout,
+                "{} filter={filter:?}",
+                input.display()
+            );
+
+            ours.retain(|argument| *argument != "-h");
+            oracle.retain(|argument| *argument != "-h");
+            ours.insert(2, "-c");
+            oracle.insert(2, "-c");
+            assert_eq!(
+                run_ours(&ours).stdout,
+                run_samtools(&oracle).stdout,
+                "{} count filter={filter:?}",
                 input.display()
             );
         }

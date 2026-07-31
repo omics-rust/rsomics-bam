@@ -1,18 +1,82 @@
+use std::collections::HashSet;
+
 use noodles::sam::alignment::Record;
+use noodles::sam::alignment::record::data::field::{Tag, Value};
 use rsomics_bamio::raw::RecordRef;
 use rsomics_common::{Result, RsomicsError};
 
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) struct ReadGroupFilter {
+    ids: HashSet<Vec<u8>>,
+}
+
+impl ReadGroupFilter {
+    pub(crate) fn new(ids: &[String]) -> Option<Self> {
+        if ids.is_empty() {
+            return None;
+        }
+
+        Some(Self {
+            ids: ids.iter().map(|id| id.as_bytes().to_vec()).collect(),
+        })
+    }
+
+    pub(crate) fn retain_header(&self, header: &mut noodles::sam::Header) {
+        header
+            .read_groups_mut()
+            .retain(|id, _| self.ids.contains::<[u8]>(id.as_ref()));
+    }
+
+    fn accepts(&self, record: &dyn Record) -> Result<bool> {
+        let data = record.data();
+        let read_group = match data
+            .get(&Tag::READ_GROUP)
+            .transpose()
+            .map_err(RsomicsError::Io)?
+        {
+            Some(Value::String(value)) => Some(value.as_ref()),
+            Some(_) => {
+                return Err(RsomicsError::InvalidInput(
+                    "alignment RG tag must be a string".to_owned(),
+                ));
+            }
+            None => None,
+        };
+        Ok(self.accepts_value(read_group))
+    }
+
+    fn accepts_raw(&self, record: &RecordRef<'_>) -> Result<bool> {
+        let Some(value) = record.aux_value(*b"RG") else {
+            return Ok(self.accepts_value(None));
+        };
+        if record.aux_type(*b"RG") != Some(b'Z') {
+            return Err(RsomicsError::InvalidInput(
+                "alignment RG tag must be a string".to_owned(),
+            ));
+        }
+        Ok(self.accepts_value(Some(value.strip_suffix(&[0]).unwrap())))
+    }
+
+    fn accepts_value(&self, value: Option<&[u8]>) -> bool {
+        match value {
+            Some(value) => self.ids.contains(value),
+            None => true,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct Filter {
+pub(crate) struct Filter<'a> {
     pub require_all: u16,
     pub exclude_any: u16,
     pub include_any: u16,
     pub exclude_all: u16,
+    pub read_groups: Option<&'a ReadGroupFilter>,
     pub minimum_mapping_quality: u8,
     pub minimum_query_length: u64,
 }
 
-impl Filter {
+impl Filter<'_> {
     pub(crate) fn accepts(self, record: &dyn Record) -> Result<bool> {
         let record_flags = record.flags().map_err(RsomicsError::Io)?;
         let flags = u16::from(record_flags);
@@ -34,6 +98,11 @@ impl Filter {
         if !self.accepts_fields(flags, mapping_quality) {
             return Ok(false);
         }
+        if let Some(read_groups) = self.read_groups
+            && !read_groups.accepts(record)?
+        {
+            return Ok(false);
+        }
         if self.minimum_query_length == 0 {
             return Ok(true);
         }
@@ -42,13 +111,18 @@ impl Filter {
         Ok(query_length >= self.minimum_query_length)
     }
 
-    pub(crate) fn accepts_raw(self, record: &RecordRef<'_>) -> bool {
+    pub(crate) fn accepts_raw(self, record: &RecordRef<'_>) -> Result<bool> {
         let flags = record.flags();
         if !self.accepts_raw_fields(flags, record.mapping_quality()) {
-            return false;
+            return Ok(false);
+        }
+        if let Some(read_groups) = self.read_groups
+            && !read_groups.accepts_raw(record)?
+        {
+            return Ok(false);
         }
         if self.minimum_query_length == 0 {
-            return true;
+            return Ok(true);
         }
 
         let query_length = record
@@ -56,7 +130,7 @@ impl Filter {
             .filter(|(kind, _)| matches!(kind, 0 | 1 | 4 | 7 | 8))
             .map(|(_, length)| u64::from(length))
             .sum::<u64>();
-        query_length >= self.minimum_query_length
+        Ok(query_length >= self.minimum_query_length)
     }
 
     fn accepts_raw_fields(self, flags: u16, mapping_quality: u8) -> bool {
@@ -101,6 +175,7 @@ mod tests {
             exclude_any: 0x100,
             include_any: 0xc0,
             exclude_all: 0x30,
+            read_groups: None,
             minimum_mapping_quality: 20,
             minimum_query_length: 0,
         };
@@ -173,6 +248,7 @@ mod tests {
             exclude_any: 0x100,
             include_any: 0xc0,
             exclude_all: 0x30,
+            read_groups: None,
             minimum_mapping_quality: 20,
             minimum_query_length: 0,
         };

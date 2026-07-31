@@ -11,7 +11,10 @@ use noodles::sam::header::record::value::{
 use rsomics_common::{Result, RsomicsError};
 use serde::Serialize;
 
-use crate::{filter::Filter, input, md, output};
+use crate::{
+    filter::{Filter, ReadGroupFilter},
+    input, md, output,
+};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Format {
@@ -88,6 +91,7 @@ pub struct Options<'a> {
     pub exclude_flags: u16,
     pub include_flags: u16,
     pub exclude_all_flags: u16,
+    pub read_groups: &'a [String],
     pub minimum_mapping_quality: u8,
     pub minimum_query_length: u64,
     pub output_format: Format,
@@ -132,14 +136,20 @@ where
     } else {
         input::open_indexed(input_path, options.reference)?
     };
-    let mut header = reader.read_header(input_path)?;
+    let header = reader.read_header(input_path)?;
+    let mut output_header = header.clone();
     let format = reader.format();
 
+    let read_groups = ReadGroupFilter::new(options.read_groups);
+    if let Some(read_groups) = &read_groups {
+        read_groups.retain_header(&mut output_header);
+    }
     let filter = Filter {
         require_all: options.require_flags,
         exclude_any: options.exclude_flags,
         include_any: options.include_flags,
         exclude_all: options.exclude_all_flags,
+        read_groups: read_groups.as_ref(),
         minimum_mapping_quality: options.minimum_mapping_quality,
         minimum_query_length: options.minimum_query_length,
     };
@@ -149,7 +159,7 @@ where
     if options.count_only {
         if format == input::Format::Bam && options.regions.is_empty() {
             reader.visit_raw_bam_records(input_path, |record| {
-                if filter.accepts_raw(&record) {
+                if filter.accepts_raw(&record)? {
                     selected = selected.checked_add(1).ok_or_else(count_overflow)?;
                 } else {
                     rejected = rejected.checked_add(1).ok_or_else(count_overflow)?;
@@ -174,7 +184,7 @@ where
         }
     } else {
         if let Some(program) = options.program {
-            add_program(&mut header, program)?;
+            add_program(&mut output_header, program)?;
         }
         let output_format = match options.output_format {
             Format::Sam => output::Format::Sam,
@@ -192,7 +202,7 @@ where
             output,
         );
         if options.with_header || options.header_only || options.output_format != Format::Sam {
-            writer.write_header(&header)?;
+            writer.write_header(&output_header)?;
         }
 
         let mut reference = if format == input::Format::Cram {
@@ -210,7 +220,7 @@ where
                 && options.regions.is_empty()
             {
                 reader.visit_raw_bam_records(input_path, |record| {
-                    if filter.accepts_raw(&record) {
+                    if filter.accepts_raw(&record)? {
                         selected = selected.checked_add(1).ok_or_else(count_overflow)?;
                         writer.write_raw_record(&record)?;
                     } else {
@@ -229,9 +239,9 @@ where
                             selected = selected.checked_add(1).ok_or_else(count_overflow)?;
                             if format == input::Format::Cram {
                                 let record = md::complete(&header, record, reference.as_mut())?;
-                                writer.write_record(&header, &record)?;
+                                writer.write_record(&output_header, &record)?;
                             } else {
-                                writer.write_record(&header, record)?;
+                                writer.write_record(&output_header, record)?;
                             }
                         } else {
                             rejected = rejected.checked_add(1).ok_or_else(count_overflow)?;
@@ -241,7 +251,7 @@ where
                 )?;
             }
         }
-        writer.finish(&header)?;
+        writer.finish(&output_header)?;
     }
 
     Ok(Summary { selected, rejected })

@@ -87,6 +87,10 @@ pub(crate) struct Arguments {
     #[arg(short = 'G', value_name = "FLAG", value_parser = parse_flags)]
     exclude_all_flags: Option<u16>,
 
+    /// Select records in this read group or with no read group
+    #[arg(short = 'r', long = "read-group", value_name = "STR")]
+    read_groups: Vec<String>,
+
     /// Minimum mapping quality
     #[arg(short = 'q', long = "min-MQ", value_name = "INT", default_value_t = 0)]
     minimum_mapping_quality: u8,
@@ -140,6 +144,7 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
         exclude_flags: arguments.exclude_flags.unwrap_or_default(),
         include_flags: arguments.include_flags.unwrap_or_default(),
         exclude_all_flags: arguments.exclude_all_flags.unwrap_or_default(),
+        read_groups: &arguments.read_groups,
         minimum_mapping_quality: arguments.minimum_mapping_quality,
         minimum_query_length: arguments.minimum_query_length,
         output_format: output_format(&arguments)?,
