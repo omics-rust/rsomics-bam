@@ -466,6 +466,60 @@ fn view_filters_records_and_headers_by_read_group() {
 }
 
 #[test]
+fn view_changes_flags_after_filtering() {
+    let input = golden("records.sam");
+    let changed = String::from_utf8(
+        run_ours(&[
+            "view",
+            "--no-PG",
+            "--add-flags",
+            "0x400",
+            "--remove-flags",
+            "0x10",
+            input.to_str().unwrap(),
+        ])
+        .stdout,
+    )
+    .unwrap();
+    let flags = changed
+        .lines()
+        .map(|line| line.split('\t').nth(1).unwrap().parse::<u16>().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(flags, [1123, 1155, 1028]);
+
+    let filtered = run_ours(&[
+        "view",
+        "--no-PG",
+        "-f",
+        "0x04",
+        "--remove-flags",
+        "0x04",
+        input.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        String::from_utf8(filtered.stdout)
+            .unwrap()
+            .split('\t')
+            .nth(1),
+        Some("0")
+    );
+
+    assert_eq!(
+        run_ours(&[
+            "view",
+            "-c",
+            "-f",
+            "0x400",
+            "--add-flags",
+            "0x400",
+            input.to_str().unwrap(),
+        ])
+        .stdout,
+        b"0\n"
+    );
+}
+
+#[test]
 fn view_rejects_ambiguous_count_outputs() {
     let directory = tempfile::tempdir().unwrap();
     let output = directory.path().join("output.sam");
@@ -1253,6 +1307,59 @@ fn view_read_group_filters_match_samtools_1_24() {
                 input.display()
             );
         }
+    }
+}
+
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn view_flag_changes_match_samtools_1_24() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let inputs = build_alignment_set(directory.path());
+
+    for (position, input) in [&inputs.sam, &inputs.bam, &inputs.cram]
+        .into_iter()
+        .enumerate()
+    {
+        let mut ours = vec![
+            "view",
+            "--no-PG",
+            "-h",
+            "--add-flags",
+            "0x400",
+            "--remove-flags",
+            "0x10",
+        ];
+        let mut oracle = ours.clone();
+        if input == &inputs.cram {
+            ours.extend(["-T", inputs.reference.to_str().unwrap()]);
+            oracle.extend(["-T", inputs.reference.to_str().unwrap()]);
+        }
+        ours.push(input.to_str().unwrap());
+        oracle.push(input.to_str().unwrap());
+        assert_eq!(
+            run_ours(&ours).stdout,
+            run_samtools(&oracle).stdout,
+            "{}",
+            input.display()
+        );
+
+        let ours_bam = directory.path().join(format!("ours-flags-{position}.bam"));
+        let oracle_bam = directory
+            .path()
+            .join(format!("oracle-flags-{position}.bam"));
+        ours.retain(|argument| *argument != "-h");
+        oracle.retain(|argument| *argument != "-h");
+        ours.splice(2..2, ["-b", "-o", ours_bam.to_str().unwrap()].into_iter());
+        oracle.splice(2..2, ["-b", "-o", oracle_bam.to_str().unwrap()].into_iter());
+        run_ours(&ours);
+        run_samtools(&oracle);
+        assert_eq!(
+            run_samtools(&["view", "--no-PG", "-h", ours_bam.to_str().unwrap()]).stdout,
+            run_samtools(&["view", "--no-PG", "-h", oracle_bam.to_str().unwrap()]).stdout,
+            "{} BAM output",
+            input.display()
+        );
     }
 }
 

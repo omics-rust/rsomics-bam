@@ -104,6 +104,14 @@ pub(crate) struct Arguments {
     )]
     minimum_query_length: u64,
 
+    /// Add FLAG bits to selected output records
+    #[arg(long, value_name = "FLAG", value_parser = parse_flags)]
+    add_flags: Vec<u16>,
+
+    /// Remove FLAG bits from selected output records
+    #[arg(long, value_name = "FLAG", value_parser = parse_flags)]
+    remove_flags: Vec<u16>,
+
     /// Reference FASTA for CRAM decoding
     #[arg(short = 'T', long, value_name = "FASTA")]
     reference: Option<PathBuf>,
@@ -147,6 +155,8 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
         read_groups: &arguments.read_groups,
         minimum_mapping_quality: arguments.minimum_mapping_quality,
         minimum_query_length: arguments.minimum_query_length,
+        add_flags: combine_flags(&arguments.add_flags),
+        remove_flags: combine_flags(&arguments.remove_flags),
         output_format: output_format(&arguments)?,
         compression: compression(&arguments),
         reference: arguments.reference.as_deref(),
@@ -360,6 +370,13 @@ fn parse_flags(value: &str) -> std::result::Result<u16, String> {
 
 fn parse_region(value: &str) -> std::result::Result<view::Region, String> {
     value.parse()
+}
+
+fn combine_flags(flags: &[u16]) -> u16 {
+    flags
+        .iter()
+        .copied()
+        .fold(0, |combined, flag| combined | flag)
 }
 
 fn output_format(arguments: &Arguments) -> Result<view::Format> {

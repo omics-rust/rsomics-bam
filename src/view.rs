@@ -94,6 +94,8 @@ pub struct Options<'a> {
     pub read_groups: &'a [String],
     pub minimum_mapping_quality: u8,
     pub minimum_query_length: u64,
+    pub add_flags: u16,
+    pub remove_flags: u16,
     pub output_format: Format,
     pub compression: Compression,
     pub reference: Option<&'a Path>,
@@ -218,6 +220,8 @@ where
             if format == input::Format::Bam
                 && options.output_format == Format::Bam
                 && options.regions.is_empty()
+                && options.add_flags == 0
+                && options.remove_flags == 0
             {
                 reader.visit_raw_bam_records(input_path, |record| {
                     if filter.accepts_raw(&record)? {
@@ -238,7 +242,16 @@ where
                         if filter.accepts(record)? {
                             selected = selected.checked_add(1).ok_or_else(count_overflow)?;
                             if format == input::Format::Cram {
-                                let record = md::complete(&header, record, reference.as_mut())?;
+                                let mut record = md::complete(&header, record, reference.as_mut())?;
+                                change_flags(&mut record, options.add_flags, options.remove_flags);
+                                writer.write_record(&output_header, &record)?;
+                            } else if options.add_flags != 0 || options.remove_flags != 0 {
+                                let mut record =
+                                    sam::alignment::RecordBuf::try_from_alignment_record(
+                                        &header, record,
+                                    )
+                                    .map_err(RsomicsError::Io)?;
+                                change_flags(&mut record, options.add_flags, options.remove_flags);
                                 writer.write_record(&output_header, &record)?;
                             } else {
                                 writer.write_record(&output_header, record)?;
@@ -255,6 +268,11 @@ where
     }
 
     Ok(Summary { selected, rejected })
+}
+
+fn change_flags(record: &mut sam::alignment::RecordBuf, add: u16, remove: u16) {
+    let flags = (u16::from(record.flags()) | add) & !remove;
+    *record.flags_mut() = sam::alignment::record::Flags::from_bits_retain(flags);
 }
 
 fn add_program(header: &mut sam::Header, program: Program<'_>) -> Result<()> {
