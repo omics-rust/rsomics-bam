@@ -1,5 +1,7 @@
-use std::io::{BufWriter, Write};
+use std::fs;
+use std::io::{self, BufWriter, Write};
 use std::num::NonZero;
+use std::path::Path;
 
 use noodles::sam::alignment::io::Write as _;
 use noodles::{bam, bgzf, sam};
@@ -37,6 +39,78 @@ where
     BamSingle(bam::io::Writer<bgzf::io::Writer<W>>),
     BamParallel(bam::io::Writer<RingBgzfWriter<W>>),
     BamParallelLevel(bam::io::Writer<bgzf::io::MultithreadedWriter<W>>),
+}
+
+pub(crate) struct TransactionalFile<'a> {
+    target: &'a Path,
+    temporary: tempfile::NamedTempFile,
+    permissions: Option<fs::Permissions>,
+}
+
+impl<'a> TransactionalFile<'a> {
+    pub(crate) fn new(target: &'a Path) -> Result<Self> {
+        let parent = target
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let temporary = tempfile::NamedTempFile::new_in(parent).map_err(|error| {
+            RsomicsError::Io(io::Error::new(
+                error.kind(),
+                format!(
+                    "creating temporary output beside {}: {error}",
+                    target.display()
+                ),
+            ))
+        })?;
+        let permissions = fs::metadata(target)
+            .ok()
+            .map(|metadata| metadata.permissions());
+        Ok(Self {
+            target,
+            temporary,
+            permissions,
+        })
+    }
+
+    pub(crate) fn reopen(&self) -> Result<fs::File> {
+        self.temporary.reopen().map_err(|error| {
+            RsomicsError::Io(io::Error::new(
+                error.kind(),
+                format!(
+                    "opening temporary output beside {}: {error}",
+                    self.target.display()
+                ),
+            ))
+        })
+    }
+
+    pub(crate) fn file_mut(&mut self) -> &mut fs::File {
+        self.temporary.as_file_mut()
+    }
+
+    pub(crate) fn commit(mut self) -> Result<()> {
+        if let Some(permissions) = self.permissions {
+            self.temporary
+                .as_file_mut()
+                .set_permissions(permissions)
+                .map_err(RsomicsError::Io)?;
+        }
+        self.temporary
+            .as_file_mut()
+            .sync_all()
+            .map_err(RsomicsError::Io)?;
+        self.temporary.persist(self.target).map_err(|error| {
+            RsomicsError::Io(io::Error::new(
+                error.error.kind(),
+                format!(
+                    "committing output {}: {}",
+                    self.target.display(),
+                    error.error
+                ),
+            ))
+        })?;
+        Ok(())
+    }
 }
 
 impl<W> Writer<W>

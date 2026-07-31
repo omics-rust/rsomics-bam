@@ -8,7 +8,7 @@ use rsomics_common::{Result, RsomicsError};
 use serde::Serialize;
 
 use crate::cli::CommandOutput;
-use crate::{flags, view};
+use crate::{flags, output::TransactionalFile, view};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum Format {
@@ -269,8 +269,7 @@ fn write_counts(path: &Path, summary: view::Summary) -> Result<()> {
 
     let mut transaction = TransactionalFile::new(path)?;
     transaction
-        .temporary
-        .as_file_mut()
+        .file_mut()
         .write_all(&data)
         .map_err(RsomicsError::Io)?;
     transaction.commit()
@@ -320,74 +319,6 @@ fn target_identity(path: &Path) -> Result<PathBuf> {
     fs::canonicalize(parent)
         .map(|parent| parent.join(name))
         .map_err(RsomicsError::Io)
-}
-
-struct TransactionalFile<'a> {
-    target: &'a Path,
-    temporary: tempfile::NamedTempFile,
-    permissions: Option<fs::Permissions>,
-}
-
-impl<'a> TransactionalFile<'a> {
-    fn new(target: &'a Path) -> Result<Self> {
-        let parent = target
-            .parent()
-            .filter(|parent| !parent.as_os_str().is_empty())
-            .unwrap_or_else(|| Path::new("."));
-        let temporary = tempfile::NamedTempFile::new_in(parent).map_err(|error| {
-            RsomicsError::Io(io::Error::new(
-                error.kind(),
-                format!(
-                    "creating temporary output beside {}: {error}",
-                    target.display()
-                ),
-            ))
-        })?;
-        let permissions = fs::metadata(target)
-            .ok()
-            .map(|metadata| metadata.permissions());
-        Ok(Self {
-            target,
-            temporary,
-            permissions,
-        })
-    }
-
-    fn reopen(&self) -> Result<fs::File> {
-        self.temporary.reopen().map_err(|error| {
-            RsomicsError::Io(io::Error::new(
-                error.kind(),
-                format!(
-                    "opening temporary output beside {}: {error}",
-                    self.target.display()
-                ),
-            ))
-        })
-    }
-
-    fn commit(mut self) -> Result<()> {
-        if let Some(permissions) = self.permissions {
-            self.temporary
-                .as_file_mut()
-                .set_permissions(permissions)
-                .map_err(RsomicsError::Io)?;
-        }
-        self.temporary
-            .as_file_mut()
-            .sync_all()
-            .map_err(RsomicsError::Io)?;
-        self.temporary.persist(self.target).map_err(|error| {
-            RsomicsError::Io(io::Error::new(
-                error.error.kind(),
-                format!(
-                    "committing output {}: {}",
-                    self.target.display(),
-                    error.error
-                ),
-            ))
-        })?;
-        Ok(())
-    }
 }
 
 fn parse_flags(value: &str) -> std::result::Result<u16, String> {
