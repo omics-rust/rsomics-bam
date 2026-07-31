@@ -2,11 +2,11 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process;
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
 use rsomics_common::{OutputArgs, Result, RsomicsError, ToolMeta, run as run_tool};
 use serde::Serialize;
 
-use crate::{flags, flagstat, head};
+use crate::{flags, flagstat, head, quickcheck};
 
 const META: ToolMeta = ToolMeta {
     name: "rsomics-bam",
@@ -36,6 +36,8 @@ enum Command {
     Flagstat(FlagstatArgs),
     /// Print header lines and the first alignments as SAM
     Head(HeadArgs),
+    /// Check alignment headers and format-specific end markers
+    Quickcheck(QuickcheckArgs),
 }
 
 #[derive(Debug, Args)]
@@ -95,12 +97,32 @@ struct HeadArgs {
     threads: usize,
 }
 
+#[derive(Debug, Args)]
+struct QuickcheckArgs {
+    /// List failed inputs
+    #[arg(short = 'v', action = ArgAction::Count)]
+    verbose: u8,
+
+    /// Suppress per-input warnings
+    #[arg(short = 'q', long)]
+    quiet: bool,
+
+    /// Allow headers without reference targets
+    #[arg(short = 'u', long)]
+    unmapped: bool,
+
+    /// Input SAM, BAM, or CRAM files
+    #[arg(value_name = "ALIGNMENT", required = true)]
+    inputs: Vec<PathBuf>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(tag = "command", rename_all = "kebab-case")]
 enum CommandOutput {
     Flags { values: Vec<flags::FlagValue> },
     Flagstat { counts: Box<flagstat::Counts> },
     Head { summary: head::Summary },
+    Quickcheck { report: quickcheck::Report },
 }
 
 #[must_use]
@@ -115,6 +137,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Flags(arguments) => execute_flags(arguments, cli.output.json),
         Command::Flagstat(arguments) => execute_flagstat(arguments, cli.output.json),
         Command::Head(arguments) => execute_head(arguments, cli.output.json),
+        Command::Quickcheck(arguments) => execute_quickcheck(arguments, cli.output.json),
     }
 }
 
@@ -212,6 +235,33 @@ fn execute_head(arguments: HeadArgs, json: bool) -> Result<CommandOutput> {
     )?;
 
     Ok(CommandOutput::Head { summary })
+}
+
+fn execute_quickcheck(arguments: QuickcheckArgs, json: bool) -> Result<CommandOutput> {
+    let report = quickcheck::check_all(
+        &arguments.inputs,
+        quickcheck::Options {
+            allow_no_targets: arguments.unmapped,
+        },
+    );
+
+    if !report.is_ok() {
+        if !json {
+            report.write_diagnostics(
+                arguments.verbose,
+                arguments.quiet,
+                io::stdout().lock(),
+                io::stderr().lock(),
+            )?;
+        }
+        return Err(RsomicsError::InvalidInput(format!(
+            "quickcheck failed for {} of {} inputs",
+            report.failed(),
+            report.files.len()
+        )));
+    }
+
+    Ok(CommandOutput::Quickcheck { report })
 }
 
 #[cfg(test)]

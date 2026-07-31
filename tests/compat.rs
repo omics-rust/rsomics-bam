@@ -181,6 +181,112 @@ fn head_rejects_json_stream_mixing() {
 }
 
 #[test]
+fn quickcheck_accepts_sam_and_bam() {
+    for input in [golden("records.sam"), golden("flagstat-small.bam")] {
+        let output = run_ours(&["quickcheck", input.to_str().unwrap()]);
+        assert!(output.stdout.is_empty());
+        assert!(output.stderr.is_empty());
+    }
+}
+
+#[test]
+fn quickcheck_detects_missing_bam_eof() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("missing-eof.bam");
+    let mut bytes = fs::read(golden("flagstat-small.bam")).unwrap();
+    bytes.truncate(bytes.len() - 28);
+    fs::write(&input, bytes).unwrap();
+
+    let output = binary()
+        .args(["quickcheck", "-v"])
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        format!("{}\n", input.display())
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("was missing EOF block when one should be present"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn quickcheck_unmapped_allows_header_without_targets() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("unmapped.sam");
+    fs::write(
+        &input,
+        b"@HD\tVN:1.6\nread1\t4\t*\t0\t0\t*\t*\t0\t0\tACGT\tIIII\n",
+    )
+    .unwrap();
+
+    let rejected = binary().args(["quickcheck"]).arg(&input).output().unwrap();
+    assert!(!rejected.status.success());
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("had no targets in header"));
+
+    let accepted = run_ours(&["quickcheck", "-u", input.to_str().unwrap()]);
+    assert!(accepted.stdout.is_empty());
+    assert!(accepted.stderr.is_empty());
+}
+
+#[test]
+fn quickcheck_quiet_suppresses_per_input_warning() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("empty");
+    fs::write(&input, []).unwrap();
+
+    let output = binary()
+        .args(["quickcheck", "-q"])
+        .arg(input)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        !stderr.contains("could not be opened for reading"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("quickcheck failed for 1 of 1 inputs"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn quickcheck_uses_the_shared_json_envelope() {
+    let valid = run_ours(&[
+        "--json",
+        "quickcheck",
+        golden("records.sam").to_str().unwrap(),
+    ]);
+    let value: serde_json::Value = serde_json::from_slice(&valid.stdout).unwrap();
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["result"]["command"], "quickcheck");
+    assert_eq!(
+        value["result"]["report"]["files"][0]["problems"],
+        serde_json::json!([])
+    );
+
+    let directory = tempfile::tempdir().unwrap();
+    let invalid = directory.path().join("invalid");
+    fs::write(&invalid, b"not alignment data").unwrap();
+    let failed = binary()
+        .args(["--json", "quickcheck"])
+        .arg(invalid)
+        .output()
+        .unwrap();
+    assert!(!failed.status.success());
+    assert!(failed.stdout.is_empty());
+    let value: serde_json::Value = serde_json::from_slice(&failed.stderr).unwrap();
+    assert_eq!(value["status"], "error");
+}
+
+#[test]
 #[ignore = "release oracle: requires samtools 1.24"]
 fn flags_match_samtools_1_24() {
     assert_samtools_1_24();
@@ -259,6 +365,57 @@ fn head_matches_samtools_1_24_for_sam_bam_and_cram() {
             let ours = run_ours(&our_arguments);
             let oracle = run_samtools(&oracle_arguments);
             assert_eq!(ours.stdout, oracle.stdout, "{}", input.display());
+        }
+    }
+}
+
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn quickcheck_matches_samtools_1_24_decisions() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let inputs = build_alignment_set(directory.path());
+    let no_targets = directory.path().join("unmapped.sam");
+    fs::write(
+        &no_targets,
+        b"@HD\tVN:1.6\nread1\t4\t*\t0\t0\t*\t*\t0\t0\tACGT\tIIII\n",
+    )
+    .unwrap();
+    let missing_eof = directory.path().join("missing-eof.bam");
+    let mut bytes = fs::read(&inputs.bam).unwrap();
+    bytes.truncate(bytes.len() - 28);
+    fs::write(&missing_eof, bytes).unwrap();
+    let invalid = directory.path().join("invalid");
+    fs::write(&invalid, b"not alignment data").unwrap();
+
+    for input in [
+        &inputs.sam,
+        &inputs.bam,
+        &inputs.cram,
+        &no_targets,
+        &missing_eof,
+        &invalid,
+    ] {
+        for options in [Vec::new(), vec!["-u"], vec!["-q"], vec!["-q", "-v"]] {
+            let mut ours = binary();
+            ours.arg("quickcheck").args(&options).arg(input);
+            let ours = ours.output().unwrap();
+
+            let mut oracle = Command::new("samtools");
+            oracle.arg("quickcheck").args(&options).arg(input);
+            let oracle = oracle.output().unwrap();
+
+            assert_eq!(
+                ours.status.success(),
+                oracle.status.success(),
+                "{} {options:?}\nours={}\noracle={}",
+                input.display(),
+                String::from_utf8_lossy(&ours.stderr),
+                String::from_utf8_lossy(&oracle.stderr)
+            );
+            if options.contains(&"-v") {
+                assert_eq!(ours.stdout, oracle.stdout, "{}", input.display());
+            }
         }
     }
 }

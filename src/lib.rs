@@ -3,8 +3,10 @@
 pub mod flags;
 pub mod flagstat;
 pub mod head;
+pub mod quickcheck;
 
 mod cli;
+mod hts_quickcheck;
 mod input;
 mod sam_format;
 
