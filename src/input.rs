@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 
 use noodles::{bam, bgzf, core::Region, cram, csi, fasta, sam};
 use noodles_util::alignment;
-use rsomics_common::{Result, RsomicsError};
+use rsomics_bamio::raw::{RecordReader, RecordRef};
+use rsomics_common::{Context, Result, RsomicsError};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Format {
@@ -129,6 +130,20 @@ impl Reader {
         Ok(())
     }
 
+    pub(crate) fn visit_raw_bam_records(
+        &mut self,
+        input: &Path,
+        visit: impl FnMut(RecordRef<'_>) -> Result<bool>,
+    ) -> Result<()> {
+        match &mut self.inner {
+            Inner::Bam(reader) => visit_raw_records(reader.get_mut(), input, visit),
+            Inner::BamRaw(reader) => visit_raw_records(reader.get_mut(), input, visit),
+            _ => Err(RsomicsError::ConfigError(
+                "raw BAM records require sequential BAM input".to_owned(),
+            )),
+        }
+    }
+
     pub(crate) fn visit_region(
         &mut self,
         header: &sam::Header,
@@ -162,6 +177,23 @@ impl Reader {
         }
         Ok(())
     }
+}
+
+fn visit_raw_records(
+    reader: &mut impl BufRead,
+    input: &Path,
+    mut visit: impl FnMut(RecordRef<'_>) -> Result<bool>,
+) -> Result<()> {
+    let mut records = RecordReader::new(reader);
+    while let Some(record) = records
+        .next()
+        .rs_with_context(|| format!("reading alignment record from {}", input.display()))?
+    {
+        if !visit(record)? {
+            break;
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn open(

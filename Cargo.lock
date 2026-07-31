@@ -613,11 +613,25 @@ dependencies = [
  "noodles",
  "noodles-bgzf",
  "noodles-util",
+ "rsomics-bamio",
  "rsomics-common",
  "rsomics-help",
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "rsomics-bamio"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c763f5d7d93597718946912f7637347b799a1c41a60d57e615c04bd10eebffd3"
+dependencies = [
+ "crossbeam-channel",
+ "libdeflater",
+ "noodles",
+ "noodles-bgzf",
+ "rsomics-common",
 ]
 
 [[package]]

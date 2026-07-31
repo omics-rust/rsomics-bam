@@ -1,4 +1,5 @@
 use std::fs;
+use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -147,6 +148,41 @@ fn truncated_alignment_fails_loudly() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn view_rejects_malformed_raw_bam_records() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("malformed.bam");
+    let output = directory.path().join("output.bam");
+
+    let mut writer = noodles::bam::io::Writer::new(File::create(&input).unwrap());
+    writer
+        .write_header(&noodles::sam::Header::default())
+        .unwrap();
+    writer.get_mut().write_all(&31u32.to_le_bytes()).unwrap();
+    writer.get_mut().write_all(&[0; 31]).unwrap();
+    writer.try_finish().unwrap();
+
+    for arguments in [
+        vec!["view", "-c", input.to_str().unwrap()],
+        vec![
+            "view",
+            "-b",
+            "-o",
+            output.to_str().unwrap(),
+            input.to_str().unwrap(),
+        ],
+    ] {
+        let result = binary().args(arguments).output().unwrap();
+        assert!(!result.status.success());
+        assert!(
+            String::from_utf8_lossy(&result.stderr).contains("invalid BAM record"),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+    assert!(!output.exists());
 }
 
 #[test]

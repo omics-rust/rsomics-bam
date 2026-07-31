@@ -109,20 +109,31 @@ where
     let mut rejected = 0u64;
 
     if options.count_only {
-        visit_records(
-            &mut reader,
-            &header,
-            input_path,
-            options.regions,
-            |record| {
-                if filter.accepts(record)? {
+        if format == input::Format::Bam && options.regions.is_empty() {
+            reader.visit_raw_bam_records(input_path, |record| {
+                if filter.accepts_raw(record.flags(), record.mapping_quality()) {
                     selected = selected.checked_add(1).ok_or_else(count_overflow)?;
                 } else {
                     rejected = rejected.checked_add(1).ok_or_else(count_overflow)?;
                 }
                 Ok(true)
-            },
-        )?;
+            })?;
+        } else {
+            visit_records(
+                &mut reader,
+                &header,
+                input_path,
+                options.regions,
+                |record| {
+                    if filter.accepts(record)? {
+                        selected = selected.checked_add(1).ok_or_else(count_overflow)?;
+                    } else {
+                        rejected = rejected.checked_add(1).ok_or_else(count_overflow)?;
+                    }
+                    Ok(true)
+                },
+            )?;
+        }
     } else {
         let output_format = match options.output_format {
             Format::Sam => output::Format::Sam,
@@ -153,26 +164,41 @@ where
         };
 
         if !options.header_only {
-            visit_records(
-                &mut reader,
-                &header,
-                input_path,
-                options.regions,
-                |record| {
-                    if filter.accepts(record)? {
+            if format == input::Format::Bam
+                && options.output_format == Format::Bam
+                && options.regions.is_empty()
+            {
+                reader.visit_raw_bam_records(input_path, |record| {
+                    if filter.accepts_raw(record.flags(), record.mapping_quality()) {
                         selected = selected.checked_add(1).ok_or_else(count_overflow)?;
-                        if format == input::Format::Cram {
-                            let record = md::complete(&header, record, reference.as_mut())?;
-                            writer.write_record(&header, &record)?;
-                        } else {
-                            writer.write_record(&header, record)?;
-                        }
+                        writer.write_raw_record(&record)?;
                     } else {
                         rejected = rejected.checked_add(1).ok_or_else(count_overflow)?;
                     }
                     Ok(true)
-                },
-            )?;
+                })?;
+            } else {
+                visit_records(
+                    &mut reader,
+                    &header,
+                    input_path,
+                    options.regions,
+                    |record| {
+                        if filter.accepts(record)? {
+                            selected = selected.checked_add(1).ok_or_else(count_overflow)?;
+                            if format == input::Format::Cram {
+                                let record = md::complete(&header, record, reference.as_mut())?;
+                                writer.write_record(&header, &record)?;
+                            } else {
+                                writer.write_record(&header, record)?;
+                            }
+                        } else {
+                            rejected = rejected.checked_add(1).ok_or_else(count_overflow)?;
+                        }
+                        Ok(true)
+                    },
+                )?;
+            }
         }
         writer.finish(&header)?;
     }

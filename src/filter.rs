@@ -29,13 +29,24 @@ impl Filter {
                 |quality| quality.get(),
             );
 
-        Ok(
-            (self.require_all == 0 || flags & self.require_all == self.require_all)
-                && flags & self.exclude_any == 0
-                && (self.include_any == 0 || flags & self.include_any != 0)
-                && (self.exclude_all == 0 || flags & self.exclude_all != self.exclude_all)
-                && mapping_quality >= self.minimum_mapping_quality,
-        )
+        Ok(self.accepts_fields(flags, mapping_quality))
+    }
+
+    pub(crate) fn accepts_raw(self, flags: u16, mapping_quality: u8) -> bool {
+        let mapping_quality = if mapping_quality == u8::MAX && flags & 0x04 != 0 {
+            0
+        } else {
+            mapping_quality
+        };
+        self.accepts_fields(flags, mapping_quality)
+    }
+
+    fn accepts_fields(self, flags: u16, mapping_quality: u8) -> bool {
+        (self.require_all == 0 || flags & self.require_all == self.require_all)
+            && flags & self.exclude_any == 0
+            && (self.include_any == 0 || flags & self.include_any != 0)
+            && (self.exclude_all == 0 || flags & self.exclude_all != self.exclude_all)
+            && mapping_quality >= self.minimum_mapping_quality
     }
 }
 
@@ -76,21 +87,45 @@ mod tests {
 
     #[test]
     fn missing_mapping_quality_distinguishes_mapped_and_unmapped_records() {
-        assert!(
-            Filter {
-                minimum_mapping_quality: u8::MAX,
-                ..Filter::default()
-            }
-            .accepts(&record(0, None))
-            .unwrap()
-        );
-        assert!(
-            !Filter {
-                minimum_mapping_quality: 1,
-                ..Filter::default()
-            }
-            .accepts(&record(0x04, None))
-            .unwrap()
-        );
+        let mapped = Filter {
+            minimum_mapping_quality: u8::MAX,
+            ..Filter::default()
+        };
+        let unmapped = Filter {
+            minimum_mapping_quality: 1,
+            ..Filter::default()
+        };
+
+        assert!(mapped.accepts(&record(0, None)).unwrap());
+        assert!(mapped.accepts_raw(0, u8::MAX));
+        assert!(!unmapped.accepts(&record(0x04, None)).unwrap());
+        assert!(!unmapped.accepts_raw(0x04, u8::MAX));
+    }
+
+    #[test]
+    fn raw_and_decoded_flag_predicates_match() {
+        let filter = Filter {
+            require_all: 0x03,
+            exclude_any: 0x100,
+            include_any: 0xc0,
+            exclude_all: 0x30,
+            minimum_mapping_quality: 20,
+        };
+
+        for (flags, mapping_quality) in [
+            (0x43, 20),
+            (0x41, 20),
+            (0x143, 20),
+            (0x03, 20),
+            (0x73, 20),
+            (0x43, 19),
+        ] {
+            assert_eq!(
+                filter
+                    .accepts(&record(flags, Some(mapping_quality)))
+                    .unwrap(),
+                filter.accepts_raw(flags, mapping_quality)
+            );
+        }
     }
 }
