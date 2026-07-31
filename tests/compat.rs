@@ -341,6 +341,46 @@ fn view_writes_finished_bam_by_flag_and_extension() {
 }
 
 #[test]
+fn view_controls_bam_compression() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = golden("records.sam");
+    let mut outputs = Vec::new();
+
+    for (name, option) in [
+        ("default.bam", "-b"),
+        ("fast.bam", "-1"),
+        ("uncompressed.bam", "-u"),
+    ] {
+        let output = directory.path().join(name);
+        run_ours(&[
+            "view",
+            option,
+            "-o",
+            output.to_str().unwrap(),
+            input.to_str().unwrap(),
+        ]);
+        assert_eq!(
+            run_ours(&["view", output.to_str().unwrap()]).stdout,
+            run_ours(&["view", input.to_str().unwrap()]).stdout
+        );
+        outputs.push(output);
+    }
+
+    assert!(fs::metadata(&outputs[2]).unwrap().len() > fs::metadata(&outputs[0]).unwrap().len());
+
+    let rejected = binary()
+        .args(["view", "-u", "-O", "sam"])
+        .arg(input)
+        .output()
+        .unwrap();
+    assert!(!rejected.status.success());
+    assert!(
+        String::from_utf8_lossy(&rejected.stderr)
+            .contains("BAM compression options cannot be combined with SAM output")
+    );
+}
+
+#[test]
 fn view_queries_indexed_regions_in_order() {
     let directory = tempfile::tempdir().unwrap();
     let bam = directory.path().join("records.bam");
@@ -853,6 +893,38 @@ fn view_bam_output_matches_samtools_1_24_for_sam_bam_and_cram() {
         let ours = run_samtools(&["view", "--no-PG", "-h", ours_path.to_str().unwrap()]);
         let oracle = run_samtools(&["view", "--no-PG", "-h", oracle_path.to_str().unwrap()]);
         assert_eq!(ours.stdout, oracle.stdout, "{}", input.display());
+    }
+}
+
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn view_bam_compression_modes_match_samtools_1_24_records() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let input = golden("records.sam");
+
+    for (position, option) in ["-1", "-u"].into_iter().enumerate() {
+        let ours_path = directory.path().join(format!("ours-{position}.bam"));
+        let oracle_path = directory.path().join(format!("oracle-{position}.bam"));
+        run_ours(&[
+            "view",
+            option,
+            "-o",
+            ours_path.to_str().unwrap(),
+            input.to_str().unwrap(),
+        ]);
+        run_samtools(&[
+            "view",
+            "--no-PG",
+            option,
+            "-o",
+            oracle_path.to_str().unwrap(),
+            input.to_str().unwrap(),
+        ]);
+
+        let ours = run_samtools(&["view", "--no-PG", "-h", ours_path.to_str().unwrap()]);
+        let oracle = run_samtools(&["view", "--no-PG", "-h", oracle_path.to_str().unwrap()]);
+        assert_eq!(ours.stdout, oracle.stdout, "{option}");
     }
 }
 

@@ -15,6 +15,14 @@ pub enum Format {
     Bam,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Compression {
+    #[default]
+    Default,
+    Fast,
+    Uncompressed,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Region {
     Mapped(core::Region),
@@ -47,6 +55,7 @@ pub struct Options<'a> {
     pub exclude_all_flags: u16,
     pub minimum_mapping_quality: u8,
     pub output_format: Format,
+    pub compression: Compression,
     pub reference: Option<&'a Path>,
     pub additional_threads: usize,
     pub regions: &'a [Region],
@@ -104,7 +113,12 @@ pub fn write(input_path: &Path, options: Options<'_>, mut output: impl Write) ->
             Format::Sam => output::Format::Sam,
             Format::Bam => output::Format::Bam,
         };
-        let mut writer = output::Writer::new(output_format, &mut output);
+        let compression = match options.compression {
+            Compression::Default => output::Compression::Default,
+            Compression::Fast => output::Compression::Fast,
+            Compression::Uncompressed => output::Compression::Uncompressed,
+        };
+        let mut writer = output::Writer::new(output_format, compression, &mut output);
         if options.with_header || options.header_only || options.output_format != Format::Sam {
             writer.write_header(&header)?;
         }

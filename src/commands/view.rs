@@ -52,6 +52,14 @@ pub(crate) struct Arguments {
     #[arg(short = 'O', long = "output-fmt", value_enum, conflicts_with = "bam")]
     format: Option<Format>,
 
+    /// Use fast BAM compression
+    #[arg(short = '1', long, conflicts_with = "uncompressed")]
+    fast: bool,
+
+    /// Write uncompressed BAM
+    #[arg(short = 'u', long, conflicts_with = "fast")]
+    uncompressed: bool,
+
     /// Require all FLAG bits
     #[arg(short = 'f', long, value_name = "FLAG", value_parser = parse_flags)]
     require_flags: Option<u16>,
@@ -106,7 +114,8 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
         include_flags: arguments.include_flags.unwrap_or_default(),
         exclude_all_flags: arguments.exclude_all_flags.unwrap_or_default(),
         minimum_mapping_quality: arguments.minimum_mapping_quality,
-        output_format: output_format(&arguments),
+        output_format: output_format(&arguments)?,
+        compression: compression(&arguments),
         reference: arguments.reference.as_deref(),
         additional_threads: arguments.threads,
         regions: &arguments.regions,
@@ -182,24 +191,44 @@ fn parse_region(value: &str) -> std::result::Result<view::Region, String> {
     value.parse()
 }
 
-fn output_format(arguments: &Arguments) -> view::Format {
+fn output_format(arguments: &Arguments) -> Result<view::Format> {
+    if (arguments.fast || arguments.uncompressed) && arguments.format == Some(Format::Sam) {
+        return Err(RsomicsError::ConfigError(
+            "BAM compression options cannot be combined with SAM output".to_owned(),
+        ));
+    }
     if arguments.bam {
-        return view::Format::Bam;
+        return Ok(view::Format::Bam);
     }
     if let Some(format) = arguments.format {
-        return match format {
+        return Ok(match format {
             Format::Sam => view::Format::Sam,
             Format::Bam => view::Format::Bam,
-        };
+        });
+    }
+    if arguments.fast || arguments.uncompressed {
+        return Ok(view::Format::Bam);
     }
 
-    match arguments
-        .output
-        .as_deref()
-        .and_then(Path::extension)
-        .and_then(|extension| extension.to_str())
-    {
-        Some("bam") => view::Format::Bam,
-        _ => view::Format::Sam,
+    Ok(
+        match arguments
+            .output
+            .as_deref()
+            .and_then(Path::extension)
+            .and_then(|extension| extension.to_str())
+        {
+            Some("bam") => view::Format::Bam,
+            _ => view::Format::Sam,
+        },
+    )
+}
+
+fn compression(arguments: &Arguments) -> view::Compression {
+    if arguments.fast {
+        view::Compression::Fast
+    } else if arguments.uncompressed {
+        view::Compression::Uncompressed
+    } else {
+        view::Compression::Default
     }
 }

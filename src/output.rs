@@ -11,6 +11,14 @@ pub(crate) enum Format {
     Bam,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum Compression {
+    #[default]
+    Default,
+    Fast,
+    Uncompressed,
+}
+
 pub(crate) struct Writer<W>
 where
     W: Write,
@@ -30,10 +38,20 @@ impl<W> Writer<W>
 where
     W: Write,
 {
-    pub(crate) fn new(format: Format, output: W) -> Self {
+    pub(crate) fn new(format: Format, compression: Compression, output: W) -> Self {
         let inner = match format {
             Format::Sam => Inner::Sam(sam::io::Writer::new(BufWriter::new(output))),
-            Format::Bam => Inner::Bam(bam::io::Writer::new(output)),
+            Format::Bam => {
+                let level = match compression {
+                    Compression::Default => bgzf::io::writer::CompressionLevel::default(),
+                    Compression::Fast => bgzf::io::writer::CompressionLevel::FAST,
+                    Compression::Uncompressed => bgzf::io::writer::CompressionLevel::NONE,
+                };
+                let writer = bgzf::io::writer::Builder::default()
+                    .set_compression_level(level)
+                    .build_from_writer(output);
+                Inner::Bam(bam::io::Writer::from(writer))
+            }
         };
         Self { inner }
     }
