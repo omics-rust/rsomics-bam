@@ -92,4 +92,27 @@ mod tests {
         assert!(help.contains("--output-fmt"), "{help}");
         assert!(help.contains("-@, --threads <INT>"), "{help}");
     }
+
+    #[test]
+    fn view_exposes_program_provenance_control() {
+        let command = Cli::command();
+        let view = command
+            .get_subcommands()
+            .find(|command| command.get_name() == "view")
+            .unwrap();
+        let argument = view
+            .get_arguments()
+            .find(|argument| argument.get_long() == Some("no-pg"))
+            .unwrap();
+        assert!(!argument.is_hide_set());
+        assert!(
+            rsomics_help::try_parse_from::<Cli, _, _>([
+                "rsomics-bam",
+                "view",
+                "--no-PG",
+                "input.sam"
+            ])
+            .is_ok()
+        );
+    }
 }

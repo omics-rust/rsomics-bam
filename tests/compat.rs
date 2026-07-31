@@ -272,6 +272,25 @@ fn view_streams_sam_body_and_counts() {
 }
 
 #[test]
+fn view_controls_program_header_provenance() {
+    let input = golden("records.sam");
+
+    let default = run_ours(&["view", "-h", input.to_str().unwrap()]);
+    let default = String::from_utf8(default.stdout).unwrap();
+    let program = default
+        .lines()
+        .find(|line| line.starts_with("@PG\tID:rsomics-bam\t"))
+        .unwrap();
+    assert!(program.contains("\tPN:rsomics-bam\t"));
+    assert!(program.contains(concat!("\tVN:", env!("CARGO_PKG_VERSION"), "\t")));
+    assert!(program.contains("\tCL:"));
+
+    let suppressed = run_ours(&["view", "-h", "--no-PG", input.to_str().unwrap()]);
+    let suppressed = String::from_utf8(suppressed.stdout).unwrap();
+    assert!(!suppressed.lines().any(|line| line.starts_with("@PG")));
+}
+
+#[test]
 fn view_reads_alignment_from_stdin() {
     let mut command = binary();
     command.args(["view", "-c", "-"]);
@@ -887,27 +906,30 @@ fn view_matches_samtools_1_24_for_streaming_filters() {
 
     for input in [&inputs.sam, &inputs.bam, &inputs.cram] {
         for (our_options, oracle_options) in [
-            (vec![], vec!["--no-PG"]),
-            (vec!["-h"], vec!["--no-PG", "-h"]),
-            (vec!["-H"], vec!["--no-PG", "-H"]),
-            (vec!["-c"], vec!["--no-PG", "-c"]),
+            (vec!["--no-PG"], vec!["--no-PG"]),
+            (vec!["--no-PG", "-h"], vec!["--no-PG", "-h"]),
+            (vec!["--no-PG", "-H"], vec!["--no-PG", "-H"]),
+            (vec!["--no-PG", "-c"], vec!["--no-PG", "-c"]),
             (
-                vec!["-c", "-f", "paired"],
+                vec!["--no-PG", "-c", "-f", "paired"],
                 vec!["--no-PG", "-c", "-f", "paired"],
             ),
             (
-                vec!["-c", "-F", "unmap"],
+                vec!["--no-PG", "-c", "-F", "unmap"],
                 vec!["--no-PG", "-c", "-F", "unmap"],
             ),
             (
-                vec!["-c", "--rf", "read1,read2"],
+                vec!["--no-PG", "-c", "--rf", "read1,read2"],
                 vec!["--no-PG", "-c", "--rf", "read1,read2"],
             ),
             (
-                vec!["-c", "-G", "paired,proper_pair"],
+                vec!["--no-PG", "-c", "-G", "paired,proper_pair"],
                 vec!["--no-PG", "-c", "-G", "paired,proper_pair"],
             ),
-            (vec!["-c", "-q", "60"], vec!["--no-PG", "-c", "-q", "60"]),
+            (
+                vec!["--no-PG", "-c", "-q", "60"],
+                vec!["--no-PG", "-c", "-q", "60"],
+            ),
         ] {
             let mut our_arguments = vec!["view"];
             our_arguments.extend(our_options);
@@ -950,7 +972,7 @@ fn view_bam_output_matches_samtools_1_24_for_sam_bam_and_cram() {
         let oracle_path = directory.path().join(format!("oracle-{position}.bam"));
 
         let mut ours = binary();
-        ours.args(["view", "-@", "2", "-b", "-f", "paired", "-o"])
+        ours.args(["view", "--no-PG", "-@", "2", "-b", "-f", "paired", "-o"])
             .arg(&ours_path);
         if input == &inputs.cram {
             ours.args(["-T", inputs.reference.to_str().unwrap()]);
@@ -986,6 +1008,7 @@ fn view_bam_compression_modes_match_samtools_1_24_records() {
         let oracle_path = directory.path().join(format!("oracle-{position}.bam"));
         run_ours(&[
             "view",
+            "--no-PG",
             option,
             "-o",
             ours_path.to_str().unwrap(),

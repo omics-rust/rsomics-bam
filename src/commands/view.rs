@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
@@ -35,6 +36,10 @@ pub(crate) struct Arguments {
     /// Explicitly omit the SAM header
     #[arg(long, conflicts_with_all = ["with_header", "header_only"])]
     no_header: bool,
+
+    /// Do not add an @PG line to the output header
+    #[arg(long = "no-pg", visible_alias = "no-PG")]
+    suppress_program_record: bool,
 
     /// Print only the count of selected records
     #[arg(short = 'c', long, conflicts_with = "header_only")]
@@ -105,6 +110,13 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
         ));
     }
 
+    let command_line = (!arguments.suppress_program_record).then(command_line);
+    let program = command_line
+        .as_deref()
+        .map(|command_line| {
+            view::Program::new("rsomics-bam", env!("CARGO_PKG_VERSION"), command_line)
+        })
+        .transpose()?;
     let options = view::Options {
         with_header: arguments.with_header,
         header_only: arguments.header_only,
@@ -119,6 +131,7 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
         reference: arguments.reference.as_deref(),
         additional_threads: arguments.threads,
         regions: &arguments.regions,
+        program,
     };
     let input = arguments.input.as_deref().unwrap_or_else(|| Path::new("-"));
 
@@ -131,6 +144,17 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
     };
 
     Ok(CommandOutput::View { summary })
+}
+
+fn command_line() -> String {
+    std::env::args_os()
+        .map(|argument| sanitize_argument(&argument))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn sanitize_argument(argument: &OsStr) -> String {
+    argument.to_string_lossy().replace(['\t', '\r', '\n'], " ")
 }
 
 fn run_to(
@@ -241,5 +265,18 @@ fn compression(arguments: &Arguments) -> view::Compression {
         view::Compression::Uncompressed
     } else {
         view::Compression::Default
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_line_arguments_cannot_create_header_fields_or_lines() {
+        assert_eq!(
+            sanitize_argument(OsStr::new("input\tname\r\n.sam")),
+            "input name  .sam"
+        );
     }
 }
