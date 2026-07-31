@@ -12,7 +12,7 @@ use rsomics_common::{Result, RsomicsError};
 use serde::Serialize;
 
 use crate::{
-    filter::{Filter, QnameFilter, ReadGroupFilter},
+    filter::{Filter, LibraryFilter, QnameFilter, ReadGroupFilter},
     input, md, output,
 };
 
@@ -93,6 +93,7 @@ pub struct Options<'a> {
     pub exclude_all_flags: u16,
     pub read_groups: &'a [String],
     pub qname_files: &'a [PathBuf],
+    pub library: Option<&'a str>,
     pub minimum_mapping_quality: u8,
     pub minimum_query_length: u64,
     pub add_flags: u16,
@@ -145,6 +146,7 @@ where
     let format = reader.format();
 
     let read_groups = ReadGroupFilter::new(options.read_groups);
+    let library = LibraryFilter::new(&header, options.library);
     if let Some(read_groups) = &read_groups {
         read_groups.retain_header(&mut output_header);
     }
@@ -155,6 +157,7 @@ where
         exclude_all: options.exclude_all_flags,
         read_groups: read_groups.as_ref(),
         qnames: qnames.as_ref(),
+        library: library.as_ref(),
         minimum_mapping_quality: options.minimum_mapping_quality,
         minimum_query_length: options.minimum_query_length,
     };

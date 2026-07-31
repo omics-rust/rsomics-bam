@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use noodles::sam::alignment::Record;
 use noodles::sam::alignment::record::data::field::{Tag, Value};
+use noodles::sam::header::record::value::map::read_group::tag as read_group_tag;
 use rsomics_bamio::raw::RecordRef;
 use rsomics_common::{Context, Result, RsomicsError};
 
@@ -33,33 +34,11 @@ impl ReadGroupFilter {
     }
 
     fn accepts(&self, record: &dyn Record) -> Result<bool> {
-        let data = record.data();
-        let read_group = match data
-            .get(&Tag::READ_GROUP)
-            .transpose()
-            .map_err(RsomicsError::Io)?
-        {
-            Some(Value::String(value)) => Some(value.as_ref()),
-            Some(_) => {
-                return Err(RsomicsError::InvalidInput(
-                    "alignment RG tag must be a string".to_owned(),
-                ));
-            }
-            None => None,
-        };
-        Ok(self.accepts_value(read_group))
+        with_read_group(record, |read_group| self.accepts_value(read_group))
     }
 
     fn accepts_raw(&self, record: &RecordRef<'_>) -> Result<bool> {
-        let Some(value) = record.aux_value(*b"RG") else {
-            return Ok(self.accepts_value(None));
-        };
-        if record.aux_type(*b"RG") != Some(b'Z') {
-            return Err(RsomicsError::InvalidInput(
-                "alignment RG tag must be a string".to_owned(),
-            ));
-        }
-        Ok(self.accepts_value(Some(value.strip_suffix(&[0]).unwrap())))
+        with_raw_read_group(record, |read_group| self.accepts_value(read_group))
     }
 
     fn accepts_value(&self, value: Option<&[u8]>) -> bool {
@@ -68,6 +47,80 @@ impl ReadGroupFilter {
             None => true,
         }
     }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) struct LibraryFilter {
+    read_groups: HashSet<Vec<u8>>,
+}
+
+impl LibraryFilter {
+    pub(crate) fn new(header: &noodles::sam::Header, library: Option<&str>) -> Option<Self> {
+        let library = library?;
+        let read_groups = header
+            .read_groups()
+            .iter()
+            .filter_map(|(id, read_group)| {
+                read_group
+                    .other_fields()
+                    .get(&read_group_tag::LIBRARY)
+                    .filter(|value| {
+                        let value: &[u8] = value.as_ref();
+                        value == library.as_bytes()
+                    })
+                    .map(|_| id.to_vec())
+            })
+            .collect();
+        Some(Self { read_groups })
+    }
+
+    fn accepts(&self, record: &dyn Record) -> Result<bool> {
+        with_read_group(record, |read_group| {
+            read_group.is_some_and(|id| self.read_groups.contains(id))
+        })
+    }
+
+    fn accepts_raw(&self, record: &RecordRef<'_>) -> Result<bool> {
+        with_raw_read_group(record, |read_group| {
+            read_group.is_some_and(|id| self.read_groups.contains(id))
+        })
+    }
+}
+
+fn with_read_group(
+    record: &dyn Record,
+    accept: impl FnOnce(Option<&[u8]>) -> bool,
+) -> Result<bool> {
+    let data = record.data();
+    let read_group = match data
+        .get(&Tag::READ_GROUP)
+        .transpose()
+        .map_err(RsomicsError::Io)?
+    {
+        Some(Value::String(value)) => Some(value.as_ref()),
+        Some(_) => {
+            return Err(RsomicsError::InvalidInput(
+                "alignment RG tag must be a string".to_owned(),
+            ));
+        }
+        None => None,
+    };
+    Ok(accept(read_group))
+}
+
+fn with_raw_read_group(
+    record: &RecordRef<'_>,
+    accept: impl FnOnce(Option<&[u8]>) -> bool,
+) -> Result<bool> {
+    let Some(value) = record.aux_value(*b"RG") else {
+        return Ok(accept(None));
+    };
+    if record.aux_type(*b"RG") != Some(b'Z') {
+        return Err(RsomicsError::InvalidInput(
+            "alignment RG tag must be a string".to_owned(),
+        ));
+    }
+    Ok(accept(Some(value.strip_suffix(&[0]).unwrap())))
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -149,6 +202,7 @@ pub(crate) struct Filter<'a> {
     pub exclude_all: u16,
     pub read_groups: Option<&'a ReadGroupFilter>,
     pub qnames: Option<&'a QnameFilter>,
+    pub library: Option<&'a LibraryFilter>,
     pub minimum_mapping_quality: u8,
     pub minimum_query_length: u64,
 }
@@ -185,6 +239,11 @@ impl Filter<'_> {
         {
             return Ok(false);
         }
+        if let Some(library) = self.library
+            && !library.accepts(record)?
+        {
+            return Ok(false);
+        }
         if self.minimum_query_length == 0 {
             return Ok(true);
         }
@@ -205,6 +264,11 @@ impl Filter<'_> {
         }
         if let Some(qnames) = self.qnames
             && !qnames.accepts_raw(record)
+        {
+            return Ok(false);
+        }
+        if let Some(library) = self.library
+            && !library.accepts_raw(record)?
         {
             return Ok(false);
         }
@@ -264,6 +328,7 @@ mod tests {
             exclude_all: 0x30,
             read_groups: None,
             qnames: None,
+            library: None,
             minimum_mapping_quality: 20,
             minimum_query_length: 0,
         };
@@ -338,6 +403,7 @@ mod tests {
             exclude_all: 0x30,
             read_groups: None,
             qnames: None,
+            library: None,
             minimum_mapping_quality: 20,
             minimum_query_length: 0,
         };

@@ -1,6 +1,6 @@
 @HD	VN:1.6	SO:coordinate
 @SQ	SN:chr1	LN:40
-@RG	ID:rg1	SM:sample-a
+@RG	ID:rg1	SM:sample-a	LB:lib-a
 read1	99	chr1	1	60	8M	=	17	24	ACGTACGT	IIIIIIII	RG:Z:rg1
 read1	147	chr1	17	60	8M	=	1	-24	ACGTACGT	IIIIIIII	RG:Z:rg1
 unmapped	4	*	0	0	*	*	0	0	N	!

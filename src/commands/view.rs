@@ -95,6 +95,10 @@ pub(crate) struct Arguments {
     #[arg(short = 'N', long = "qname-file", value_name = "[^]FILE")]
     qname_files: Vec<PathBuf>,
 
+    /// Select records from this library
+    #[arg(short = 'l', long, value_name = "STR")]
+    library: Option<String>,
+
     /// Minimum mapping quality
     #[arg(short = 'q', long = "min-MQ", value_name = "INT", default_value_t = 0)]
     minimum_mapping_quality: u8,
@@ -158,6 +162,7 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
         exclude_all_flags: arguments.exclude_all_flags.unwrap_or_default(),
         read_groups: &arguments.read_groups,
         qname_files: &arguments.qname_files,
+        library: arguments.library.as_deref(),
         minimum_mapping_quality: arguments.minimum_mapping_quality,
         minimum_query_length: arguments.minimum_query_length,
         add_flags: combine_flags(&arguments.add_flags),

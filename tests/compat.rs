@@ -219,7 +219,8 @@ fn head_defaults_to_header_only() {
     let text = String::from_utf8(output.stdout).unwrap();
     assert_eq!(
         text,
-        "@HD\tVN:1.6\tSO:coordinate\n@SQ\tSN:chr1\tLN:40\n@RG\tID:rg1\tSM:sample-a\n"
+        "@HD\tVN:1.6\tSO:coordinate\n@SQ\tSN:chr1\tLN:40\n\
+         @RG\tID:rg1\tSM:sample-a\tLB:lib-a\n"
     );
 }
 
@@ -542,6 +543,71 @@ fn view_filters_by_read_names_from_files() {
         .stdout,
         b"1\n"
     );
+}
+
+#[test]
+fn view_filters_by_library_from_read_group_headers() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = golden("records.sam");
+
+    assert_eq!(
+        run_ours(&["view", "-c", "-l", "lib-a", input.to_str().unwrap()]).stdout,
+        b"2\n"
+    );
+    assert_eq!(
+        run_ours(&["view", "-c", "-l", "missing", input.to_str().unwrap()]).stdout,
+        b"0\n"
+    );
+
+    let selected = String::from_utf8(
+        run_ours(&[
+            "view",
+            "--no-PG",
+            "-h",
+            "-l",
+            "lib-a",
+            input.to_str().unwrap(),
+        ])
+        .stdout,
+    )
+    .unwrap();
+    assert!(selected.contains("@RG\tID:rg1\tSM:sample-a\tLB:lib-a\n"));
+    assert_eq!(
+        selected
+            .lines()
+            .filter(|line| !line.starts_with('@'))
+            .count(),
+        2
+    );
+
+    let bam = directory.path().join("records.bam");
+    run_ours(&[
+        "view",
+        "--no-PG",
+        "-b",
+        "-o",
+        bam.to_str().unwrap(),
+        input.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        run_ours(&["view", "-c", "-l", "lib-a", bam.to_str().unwrap()]).stdout,
+        b"2\n"
+    );
+
+    let invalid = directory.path().join("invalid-library.sam");
+    fs::write(
+        &invalid,
+        b"@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:40\n@RG\tID:rg1\tLB:lib-a\n\
+          r1\t0\tchr1\t1\t60\t1M\t*\t0\t0\tA\tI\tRG:i:1\n",
+    )
+    .unwrap();
+    let failed = binary()
+        .args(["view", "-c", "-l", "lib-a"])
+        .arg(invalid)
+        .output()
+        .unwrap();
+    assert!(!failed.status.success());
+    assert!(String::from_utf8_lossy(&failed.stderr).contains("RG tag must be a string"));
 }
 
 #[test]
@@ -1467,6 +1533,64 @@ fn view_qname_files_match_samtools_1_24() {
         }
         ours.push(input.to_str().unwrap());
         oracle.push(input.to_str().unwrap());
+        run_ours(&ours);
+        run_samtools(&oracle);
+        assert_eq!(
+            run_samtools(&["view", "--no-PG", "-h", ours_bam.to_str().unwrap()]).stdout,
+            run_samtools(&["view", "--no-PG", "-h", oracle_bam.to_str().unwrap()]).stdout,
+            "{} BAM output",
+            input.display()
+        );
+    }
+}
+
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn view_library_filter_matches_samtools_1_24() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let inputs = build_alignment_set(directory.path());
+
+    for (position, input) in [&inputs.sam, &inputs.bam, &inputs.cram]
+        .into_iter()
+        .enumerate()
+    {
+        let mut ours = vec!["view", "--no-PG", "-h", "-l", "lib-a"];
+        let mut oracle = ours.clone();
+        if input == &inputs.cram {
+            ours.extend(["-T", inputs.reference.to_str().unwrap()]);
+            oracle.extend(["-T", inputs.reference.to_str().unwrap()]);
+        }
+        ours.push(input.to_str().unwrap());
+        oracle.push(input.to_str().unwrap());
+        assert_eq!(
+            run_ours(&ours).stdout,
+            run_samtools(&oracle).stdout,
+            "{}",
+            input.display()
+        );
+
+        ours.retain(|argument| *argument != "-h");
+        oracle.retain(|argument| *argument != "-h");
+        ours.insert(2, "-c");
+        oracle.insert(2, "-c");
+        assert_eq!(
+            run_ours(&ours).stdout,
+            run_samtools(&oracle).stdout,
+            "{} count",
+            input.display()
+        );
+
+        let ours_bam = directory
+            .path()
+            .join(format!("ours-library-{position}.bam"));
+        let oracle_bam = directory
+            .path()
+            .join(format!("oracle-library-{position}.bam"));
+        ours.retain(|argument| *argument != "-c");
+        oracle.retain(|argument| *argument != "-c");
+        ours.splice(2..2, ["-b", "-o", ours_bam.to_str().unwrap()].into_iter());
+        oracle.splice(2..2, ["-b", "-o", oracle_bam.to_str().unwrap()].into_iter());
         run_ours(&ours);
         run_samtools(&oracle);
         assert_eq!(
