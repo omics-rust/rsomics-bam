@@ -3,3 +3,4 @@ pub(crate) mod flagstat;
 pub(crate) mod head;
 pub(crate) mod quickcheck;
 pub(crate) mod samples;
+pub(crate) mod view;

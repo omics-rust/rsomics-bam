@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 use rsomics_common::{OutputArgs, Result, ToolMeta, run as run_tool};
 use serde::Serialize;
 
-use crate::{commands, flags, flagstat, head, quickcheck, samples};
+use crate::{commands, flags, flagstat, head, quickcheck, samples, view};
 
 const META: ToolMeta = ToolMeta {
     name: "rsomics-bam",
@@ -38,6 +38,8 @@ enum Command {
     Quickcheck(commands::quickcheck::Arguments),
     /// List samples declared by alignment read groups
     Samples(commands::samples::Arguments),
+    /// Filter and convert alignment records
+    View(commands::view::Arguments),
 }
 
 #[derive(Debug, Serialize)]
@@ -48,6 +50,7 @@ pub(crate) enum CommandOutput {
     Head { summary: head::Summary },
     Quickcheck { report: quickcheck::Report },
     Samples { report: samples::Report },
+    View { summary: view::Summary },
 }
 
 #[must_use]
@@ -64,6 +67,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Head(arguments) => commands::head::execute(arguments, cli.output.json),
         Command::Quickcheck(arguments) => commands::quickcheck::execute(arguments, cli.output.json),
         Command::Samples(arguments) => commands::samples::execute(arguments, cli.output.json),
+        Command::View(arguments) => commands::view::execute(arguments, cli.output.json),
     }
 }
 

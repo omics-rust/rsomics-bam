@@ -217,6 +217,81 @@ fn head_rejects_json_stream_mixing() {
 }
 
 #[test]
+fn view_streams_sam_body_and_counts() {
+    let input = golden("records.sam");
+    let output = run_ours(&["view", input.to_str().unwrap()]);
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(text.lines().count(), 3, "{text}");
+    assert!(!text.starts_with('@'), "{text}");
+
+    let output = run_ours(&["view", "-c", "-f", "paired", input.to_str().unwrap()]);
+    assert_eq!(output.stdout, b"2\n");
+}
+
+#[test]
+fn view_reads_alignment_from_stdin() {
+    let mut command = binary();
+    command.args(["view", "-c", "-"]);
+    let output = run_with_stdin(command, &fs::read(golden("records.sam")).unwrap());
+    assert_eq!(output.stdout, b"3\n");
+}
+
+#[test]
+fn view_count_uses_the_shared_json_envelope() {
+    let input = golden("records.sam");
+    let output = run_ours(&["--json", "view", "-c", input.to_str().unwrap()]);
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["result"]["command"], "view");
+    assert_eq!(value["result"]["summary"]["selected"], 3);
+    assert_eq!(value["result"]["summary"]["rejected"], 0);
+}
+
+#[test]
+fn view_rejects_json_stream_mixing() {
+    let input = golden("records.sam");
+    let output = binary()
+        .args(["--json", "view"])
+        .arg(input)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(value["status"], "error");
+}
+
+#[test]
+fn view_commits_file_output_only_after_success() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = directory.path().join("output.sam");
+    fs::write(&output, b"existing\n").unwrap();
+
+    let invalid = directory.path().join("invalid.sam");
+    fs::write(
+        &invalid,
+        b"@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:40\nbroken\t0\tchr1\n",
+    )
+    .unwrap();
+    let failed = binary()
+        .args(["view", "-o"])
+        .arg(&output)
+        .arg(&invalid)
+        .output()
+        .unwrap();
+    assert!(!failed.status.success());
+    assert_eq!(fs::read(&output).unwrap(), b"existing\n");
+
+    let succeeded = binary()
+        .args(["view", "-o"])
+        .arg(&output)
+        .arg(golden("records.sam"))
+        .output()
+        .unwrap();
+    assert!(succeeded.status.success());
+    assert_eq!(fs::read_to_string(&output).unwrap().lines().count(), 3);
+}
+
+#[test]
 fn quickcheck_accepts_sam_and_bam() {
     for input in [golden("records.sam"), golden("flagstat-small.bam")] {
         let output = run_ours(&["quickcheck", input.to_str().unwrap()]);
@@ -545,6 +620,63 @@ equal\t0\tchr1\t1\t60\t4M\t*\t0\t0\t====\t*\n",
         cram.to_str().unwrap(),
     ]);
     assert_eq!(ours.stdout, oracle.stdout);
+}
+
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn view_matches_samtools_1_24_for_streaming_filters() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let inputs = build_alignment_set(directory.path());
+
+    for input in [&inputs.sam, &inputs.bam, &inputs.cram] {
+        for (our_options, oracle_options) in [
+            (vec![], vec!["--no-PG"]),
+            (vec!["-h"], vec!["--no-PG", "-h"]),
+            (vec!["-H"], vec!["--no-PG", "-H"]),
+            (vec!["-c"], vec!["--no-PG", "-c"]),
+            (
+                vec!["-c", "-f", "paired"],
+                vec!["--no-PG", "-c", "-f", "paired"],
+            ),
+            (
+                vec!["-c", "-F", "unmap"],
+                vec!["--no-PG", "-c", "-F", "unmap"],
+            ),
+            (
+                vec!["-c", "--rf", "read1,read2"],
+                vec!["--no-PG", "-c", "--rf", "read1,read2"],
+            ),
+            (
+                vec!["-c", "-G", "paired,proper_pair"],
+                vec!["--no-PG", "-c", "-G", "paired,proper_pair"],
+            ),
+            (vec!["-c", "-q", "60"], vec!["--no-PG", "-c", "-q", "60"]),
+        ] {
+            let mut our_arguments = vec!["view"];
+            our_arguments.extend(our_options);
+            if input == &inputs.cram {
+                our_arguments.extend(["--reference", inputs.reference.to_str().unwrap()]);
+            }
+            our_arguments.push(input.to_str().unwrap());
+
+            let mut oracle_arguments = vec!["view"];
+            oracle_arguments.extend(oracle_options);
+            if input == &inputs.cram {
+                oracle_arguments.extend(["-T", inputs.reference.to_str().unwrap()]);
+            }
+            oracle_arguments.push(input.to_str().unwrap());
+
+            let ours = run_ours(&our_arguments);
+            let oracle = run_samtools(&oracle_arguments);
+            assert_eq!(
+                ours.stdout,
+                oracle.stdout,
+                "{} {our_arguments:?}",
+                input.display()
+            );
+        }
+    }
 }
 
 #[test]
