@@ -348,6 +348,20 @@ fn view_saves_filter_counts_transactionally() {
 }
 
 #[test]
+fn view_filters_by_query_length() {
+    let input = golden("records.sam");
+
+    assert_eq!(
+        run_ours(&["view", "-c", "-m", "1", input.to_str().unwrap()]).stdout,
+        b"2\n"
+    );
+    assert_eq!(
+        run_ours(&["view", "-c", "-m", "9", input.to_str().unwrap()]).stdout,
+        b"0\n"
+    );
+}
+
+#[test]
 fn view_rejects_ambiguous_count_outputs() {
     let directory = tempfile::tempdir().unwrap();
     let output = directory.path().join("output.sam");
@@ -1062,6 +1076,34 @@ fn view_saved_counts_match_samtools_1_24() {
         let oracle: serde_json::Value =
             serde_json::from_slice(&fs::read(oracle_counts).unwrap()).unwrap();
         assert_eq!(ours, oracle, "{}", input.display());
+    }
+}
+
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn view_minimum_query_length_matches_samtools_1_24() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let inputs = build_alignment_set(directory.path());
+
+    for input in [&inputs.sam, &inputs.bam, &inputs.cram] {
+        for minimum in ["0", "1", "8", "9"] {
+            let mut ours = vec!["view", "--no-PG", "-c", "-m", minimum];
+            let mut oracle = vec!["view", "--no-PG", "-c", "-m", minimum];
+            if input == &inputs.cram {
+                ours.extend(["-T", inputs.reference.to_str().unwrap()]);
+                oracle.extend(["-T", inputs.reference.to_str().unwrap()]);
+            }
+            ours.push(input.to_str().unwrap());
+            oracle.push(input.to_str().unwrap());
+
+            assert_eq!(
+                run_ours(&ours).stdout,
+                run_samtools(&oracle).stdout,
+                "{} minimum={minimum}",
+                input.display()
+            );
+        }
     }
 }
 

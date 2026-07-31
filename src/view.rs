@@ -89,6 +89,7 @@ pub struct Options<'a> {
     pub include_flags: u16,
     pub exclude_all_flags: u16,
     pub minimum_mapping_quality: u8,
+    pub minimum_query_length: u64,
     pub output_format: Format,
     pub compression: Compression,
     pub reference: Option<&'a Path>,
@@ -140,6 +141,7 @@ where
         include_any: options.include_flags,
         exclude_all: options.exclude_all_flags,
         minimum_mapping_quality: options.minimum_mapping_quality,
+        minimum_query_length: options.minimum_query_length,
     };
     let mut selected = 0u64;
     let mut rejected = 0u64;
@@ -147,7 +149,7 @@ where
     if options.count_only {
         if format == input::Format::Bam && options.regions.is_empty() {
             reader.visit_raw_bam_records(input_path, |record| {
-                if filter.accepts_raw(record.flags(), record.mapping_quality()) {
+                if filter.accepts_raw(&record) {
                     selected = selected.checked_add(1).ok_or_else(count_overflow)?;
                 } else {
                     rejected = rejected.checked_add(1).ok_or_else(count_overflow)?;
@@ -208,7 +210,7 @@ where
                 && options.regions.is_empty()
             {
                 reader.visit_raw_bam_records(input_path, |record| {
-                    if filter.accepts_raw(record.flags(), record.mapping_quality()) {
+                    if filter.accepts_raw(&record) {
                         selected = selected.checked_add(1).ok_or_else(count_overflow)?;
                         writer.write_raw_record(&record)?;
                     } else {

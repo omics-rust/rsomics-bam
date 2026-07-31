@@ -1,4 +1,5 @@
 use noodles::sam::alignment::Record;
+use rsomics_bamio::raw::RecordRef;
 use rsomics_common::{Result, RsomicsError};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -8,6 +9,7 @@ pub(crate) struct Filter {
     pub include_any: u16,
     pub exclude_all: u16,
     pub minimum_mapping_quality: u8,
+    pub minimum_query_length: u64,
 }
 
 impl Filter {
@@ -29,10 +31,35 @@ impl Filter {
                 |quality| quality.get(),
             );
 
-        Ok(self.accepts_fields(flags, mapping_quality))
+        if !self.accepts_fields(flags, mapping_quality) {
+            return Ok(false);
+        }
+        if self.minimum_query_length == 0 {
+            return Ok(true);
+        }
+
+        let query_length = record.cigar().read_length().map_err(RsomicsError::Io)? as u64;
+        Ok(query_length >= self.minimum_query_length)
     }
 
-    pub(crate) fn accepts_raw(self, flags: u16, mapping_quality: u8) -> bool {
+    pub(crate) fn accepts_raw(self, record: &RecordRef<'_>) -> bool {
+        let flags = record.flags();
+        if !self.accepts_raw_fields(flags, record.mapping_quality()) {
+            return false;
+        }
+        if self.minimum_query_length == 0 {
+            return true;
+        }
+
+        let query_length = record
+            .cigar_ops()
+            .filter(|(kind, _)| matches!(kind, 0 | 1 | 4 | 7 | 8))
+            .map(|(_, length)| u64::from(length))
+            .sum::<u64>();
+        query_length >= self.minimum_query_length
+    }
+
+    fn accepts_raw_fields(self, flags: u16, mapping_quality: u8) -> bool {
         let mapping_quality = if mapping_quality == u8::MAX && flags & 0x04 != 0 {
             0
         } else {
@@ -75,6 +102,7 @@ mod tests {
             include_any: 0xc0,
             exclude_all: 0x30,
             minimum_mapping_quality: 20,
+            minimum_query_length: 0,
         };
 
         assert!(filter.accepts(&record(0x43, Some(20))).unwrap());
@@ -97,9 +125,45 @@ mod tests {
         };
 
         assert!(mapped.accepts(&record(0, None)).unwrap());
-        assert!(mapped.accepts_raw(0, u8::MAX));
         assert!(!unmapped.accepts(&record(0x04, None)).unwrap());
-        assert!(!unmapped.accepts_raw(0x04, u8::MAX));
+    }
+
+    #[test]
+    fn minimum_query_length_uses_read_consuming_cigar_operations() {
+        use noodles::sam::alignment::{
+            record::cigar::{Op, op::Kind},
+            record_buf::Cigar,
+        };
+
+        let cigar: Cigar = [
+            Op::new(Kind::SoftClip, 2),
+            Op::new(Kind::Match, 4),
+            Op::new(Kind::Insertion, 1),
+            Op::new(Kind::Deletion, 3),
+            Op::new(Kind::SequenceMatch, 2),
+            Op::new(Kind::SequenceMismatch, 1),
+            Op::new(Kind::HardClip, 5),
+        ]
+        .into_iter()
+        .collect();
+        let record = RecordBuf::builder().set_cigar(cigar).build();
+
+        assert!(
+            Filter {
+                minimum_query_length: 10,
+                ..Filter::default()
+            }
+            .accepts(&record)
+            .unwrap()
+        );
+        assert!(
+            !Filter {
+                minimum_query_length: 11,
+                ..Filter::default()
+            }
+            .accepts(&record)
+            .unwrap()
+        );
     }
 
     #[test]
@@ -110,6 +174,7 @@ mod tests {
             include_any: 0xc0,
             exclude_all: 0x30,
             minimum_mapping_quality: 20,
+            minimum_query_length: 0,
         };
 
         for (flags, mapping_quality) in [
@@ -124,7 +189,7 @@ mod tests {
                 filter
                     .accepts(&record(flags, Some(mapping_quality)))
                     .unwrap(),
-                filter.accepts_raw(flags, mapping_quality)
+                filter.accepts_raw_fields(flags, mapping_quality)
             );
         }
     }

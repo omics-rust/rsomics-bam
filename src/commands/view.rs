@@ -91,6 +91,15 @@ pub(crate) struct Arguments {
     #[arg(short = 'q', long = "min-MQ", value_name = "INT", default_value_t = 0)]
     minimum_mapping_quality: u8,
 
+    /// Minimum query length measured from the CIGAR
+    #[arg(
+        short = 'm',
+        long = "min-qlen",
+        value_name = "INT",
+        default_value_t = 0
+    )]
+    minimum_query_length: u64,
+
     /// Reference FASTA for CRAM decoding
     #[arg(short = 'T', long, value_name = "FASTA")]
     reference: Option<PathBuf>,
@@ -132,6 +141,7 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
         include_flags: arguments.include_flags.unwrap_or_default(),
         exclude_all_flags: arguments.exclude_all_flags.unwrap_or_default(),
         minimum_mapping_quality: arguments.minimum_mapping_quality,
+        minimum_query_length: arguments.minimum_query_length,
         output_format: output_format(&arguments)?,
         compression: compression(&arguments),
         reference: arguments.reference.as_deref(),
