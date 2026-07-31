@@ -4,8 +4,10 @@ pub mod flags;
 pub mod flagstat;
 pub mod head;
 pub mod quickcheck;
+pub mod samples;
 
 mod cli;
+mod hts_metadata;
 mod hts_quickcheck;
 mod input;
 mod sam_format;

@@ -1,6 +1,7 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 fn binary() -> Command {
     Command::new(env!("CARGO_BIN_EXE_rsomics-bam"))
@@ -34,6 +35,29 @@ fn run_samtools(arguments: &[&str]) -> Output {
     let mut command = Command::new("samtools");
     command.args(arguments);
     run(command)
+}
+
+fn run_with_stdin(mut command: Command, input: &[u8]) -> Output {
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().expect("spawn command");
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input)
+        .expect("write stdin");
+    let output = child.wait_with_output().expect("wait for command");
+    assert!(
+        output.status.success(),
+        "status={:?}\nstdout={}\nstderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output
 }
 
 fn assert_samtools_1_24() {
@@ -287,6 +311,63 @@ fn quickcheck_uses_the_shared_json_envelope() {
 }
 
 #[test]
+fn samples_reads_sam_headers_and_custom_tags() {
+    let input = golden("records.sam");
+    let output = run_ours(&["samples", input.to_str().unwrap()]);
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        format!("sample-a\t{}\n", input.display())
+    );
+
+    let output = run_ours(&["samples", "-T", "ID", input.to_str().unwrap()]);
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        format!("rg1\t{}\n", input.display())
+    );
+}
+
+#[test]
+fn samples_deduplicates_values_and_ignores_missing_tags() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("samples.sam");
+    fs::write(
+        &input,
+        b"@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:40\n\
+          @RG\tID:r1\tSM:zeta\n@RG\tID:r2\tSM:alpha\n\
+          @RG\tID:r3\tSM:zeta\n@RG\tID:r4\n@RG\tID:r5\tSM:beta\n",
+    )
+    .unwrap();
+
+    let output = run_ours(&["samples", input.to_str().unwrap()]);
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        format!("alpha\t{0}\nbeta\t{0}\nzeta\t{0}\n", input.display())
+    );
+}
+
+#[test]
+fn samples_uses_the_shared_json_envelope() {
+    let input = golden("records.sam");
+    let output = run_ours(&["--json", "samples", input.to_str().unwrap()]);
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["result"]["command"], "samples");
+    assert_eq!(value["result"]["report"]["entries"][0]["value"], "sample-a");
+}
+
+#[test]
+fn samples_reads_input_paths_from_stdin() {
+    let input = golden("records.sam");
+    let mut command = binary();
+    command.arg("samples");
+    let output = run_with_stdin(command, format!("{}\n", input.display()).as_bytes());
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        format!("sample-a\t{}\n", input.display())
+    );
+}
+
+#[test]
 #[ignore = "release oracle: requires samtools 1.24"]
 fn flags_match_samtools_1_24() {
     assert_samtools_1_24();
@@ -417,5 +498,108 @@ fn quickcheck_matches_samtools_1_24_decisions() {
                 assert_eq!(ours.stdout, oracle.stdout, "{}", input.display());
             }
         }
+    }
+}
+
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn samples_matches_samtools_1_24_for_sam_bam_cram_and_metadata() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let inputs = build_alignment_set(directory.path());
+    let bam_index = directory.path().join("records.bam.bai");
+    run_samtools(&[
+        "index",
+        "-o",
+        bam_index.to_str().unwrap(),
+        inputs.bam.to_str().unwrap(),
+    ]);
+
+    for input in [&inputs.sam, &inputs.bam, &inputs.cram] {
+        for (ours, oracle) in [
+            (Vec::new(), Vec::new()),
+            (vec!["-H"], vec!["-h"]),
+            (vec!["-T", "ID"], vec!["-T", "ID"]),
+        ] {
+            let mut our_arguments = vec!["samples"];
+            our_arguments.extend(ours);
+            our_arguments.push(input.to_str().unwrap());
+            let ours = run_ours(&our_arguments);
+
+            let mut oracle_arguments = vec!["samples"];
+            oracle_arguments.extend(oracle);
+            oracle_arguments.push(input.to_str().unwrap());
+            let oracle = run_samtools(&oracle_arguments);
+            assert_eq!(ours.stdout, oracle.stdout, "{}", input.display());
+        }
+    }
+
+    let ours = run_ours(&[
+        "samples",
+        "-H",
+        "-i",
+        "-f",
+        inputs.reference.to_str().unwrap(),
+        "-X",
+        inputs.bam.to_str().unwrap(),
+        bam_index.to_str().unwrap(),
+    ]);
+    let oracle = run_samtools(&[
+        "samples",
+        "-h",
+        "-i",
+        "-f",
+        inputs.reference.to_str().unwrap(),
+        "-X",
+        inputs.bam.to_str().unwrap(),
+        bam_index.to_str().unwrap(),
+    ]);
+    assert_eq!(ours.stdout, oracle.stdout);
+
+    let reference_list = directory.path().join("references.txt");
+    fs::write(&reference_list, format!("{}\n", inputs.reference.display())).unwrap();
+    let ours = run_ours(&[
+        "samples",
+        "-H",
+        "-F",
+        reference_list.to_str().unwrap(),
+        inputs.bam.to_str().unwrap(),
+    ]);
+    let oracle = run_samtools(&[
+        "samples",
+        "-h",
+        "-F",
+        reference_list.to_str().unwrap(),
+        inputs.bam.to_str().unwrap(),
+    ]);
+    assert_eq!(ours.stdout, oracle.stdout);
+
+    let mut ours = binary();
+    ours.args(["samples", "-i", "-X"]);
+    let ours = run_with_stdin(
+        ours,
+        format!("{}\t{}\n", inputs.bam.display(), bam_index.display()).as_bytes(),
+    );
+    let mut oracle = Command::new("samtools");
+    oracle.args(["samples", "-i", "-X"]);
+    let oracle = run_with_stdin(
+        oracle,
+        format!("{}\t{}\n", inputs.bam.display(), bam_index.display()).as_bytes(),
+    );
+    assert_eq!(ours.stdout, oracle.stdout);
+
+    let many = directory.path().join("many.sam");
+    let mut header = String::from("@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:40\n");
+    for position in 0..20 {
+        header.push_str(&format!(
+            "@RG\tID:r{position}\tSM:sample-{}\tLB:library-{position}\n",
+            position % 13
+        ));
+    }
+    fs::write(&many, header).unwrap();
+    for tag in ["SM", "LB"] {
+        let ours = run_ours(&["samples", "-T", tag, many.to_str().unwrap()]);
+        let oracle = run_samtools(&["samples", "-T", tag, many.to_str().unwrap()]);
+        assert_eq!(ours.stdout, oracle.stdout, "tag={tag}");
     }
 }
