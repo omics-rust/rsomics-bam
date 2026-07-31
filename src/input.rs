@@ -1,11 +1,12 @@
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Cursor, Read};
 use std::num::NonZero;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use noodles::{bam, bgzf, core::Region, cram, csi, fasta, sam};
+use noodles::{bam, bgzf, core::Region, cram, fasta, sam};
 use noodles_util::alignment;
 use rsomics_bamio::raw::{RawRecord, RawRecordEncoder, RecordReader, RecordRef};
+use rsomics_bamio::{IndexedAlignmentReader, open_indexed_alignment};
 use rsomics_common::{Context, Result, RsomicsError};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -28,7 +29,7 @@ enum Inner {
     Bam(ParallelBamReader),
     BamRaw(bam::io::Reader<BufReader<File>>),
     Cram(cram::io::Reader<BufReader<File>>),
-    Indexed(alignment::io::IndexedReader<File>),
+    Indexed(IndexedAlignmentReader),
 }
 
 type ParallelBamReader = bam::io::Reader<Box<dyn BufRead + Send>>;
@@ -313,101 +314,13 @@ pub(crate) fn open(
 }
 
 pub(crate) fn open_indexed(input: &Path, reference: Option<&Path>) -> Result<Reader> {
-    if input == Path::new("-") {
-        return Err(RsomicsError::ConfigError(
-            "region queries require a file-backed alignment input".to_owned(),
-        ));
-    }
-
-    let (format, compression) = detect_source(input)?;
-    if matches!(
-        (format, compression),
-        (Format::Sam | Format::Bam, Compression::None)
-    ) {
-        return Err(RsomicsError::InvalidInput(format!(
-            "region queries require BGZF SAM, BAM, or CRAM input: {}",
-            input.display()
-        )));
-    }
-
-    let mut builder = alignment::io::indexed_reader::Builder::default();
-    if let Some(reference) = reference {
-        builder = builder.set_reference_sequence_repository(reference_repository(reference)?);
-    }
-    builder = set_alternative_index(builder, input, format)?;
-
-    let inner = builder
-        .build_from_path(input)
-        .map(Inner::Indexed)
-        .map_err(|error| {
-            RsomicsError::InvalidInput(format!(
-                "opening indexed alignment input {}: {error}",
-                input.display()
-            ))
-        })?;
+    let format = detect_format(input)?;
+    let inner = open_indexed_alignment(input, reference).map(Inner::Indexed)?;
     Ok(Reader { inner, format })
 }
 
 pub(crate) fn detect_format(input: &Path) -> Result<Format> {
     detect_source(input).map(|(format, _)| format)
-}
-
-fn set_alternative_index(
-    mut builder: alignment::io::indexed_reader::Builder,
-    input: &Path,
-    format: Format,
-) -> Result<alignment::io::indexed_reader::Builder> {
-    match format {
-        Format::Sam => {
-            let appended = append_extension(input, "csi");
-            let alternative = input.with_extension("csi");
-            if !index_exists(input, &appended)? && index_exists(input, &alternative)? {
-                let index = csi::fs::read(&alternative)
-                    .map_err(|error| index_error(input, &alternative, error))?;
-                builder = builder.set_index(index);
-            }
-        }
-        Format::Bam => {
-            let appended_bai = append_extension(input, "bai");
-            let appended_csi = append_extension(input, "csi");
-            if !index_exists(input, &appended_bai)? && !index_exists(input, &appended_csi)? {
-                let alternative_bai = input.with_extension("bai");
-                let alternative_csi = input.with_extension("csi");
-                if index_exists(input, &alternative_bai)? {
-                    let index = bam::bai::fs::read(&alternative_bai)
-                        .map_err(|error| index_error(input, &alternative_bai, error))?;
-                    builder = builder.set_index(index);
-                } else if index_exists(input, &alternative_csi)? {
-                    let index = csi::fs::read(&alternative_csi)
-                        .map_err(|error| index_error(input, &alternative_csi, error))?;
-                    builder = builder.set_index(index);
-                }
-            }
-        }
-        Format::Cram => {
-            let appended = append_extension(input, "crai");
-            let alternative = input.with_extension("crai");
-            if !index_exists(input, &appended)? && index_exists(input, &alternative)? {
-                let index = cram::crai::fs::read(&alternative)
-                    .map_err(|error| index_error(input, &alternative, error))?;
-                builder = builder.set_index(index);
-            }
-        }
-    }
-    Ok(builder)
-}
-
-fn append_extension(path: &Path, extension: &str) -> PathBuf {
-    let mut path = path.as_os_str().to_owned();
-    path.push(".");
-    path.push(extension);
-    PathBuf::from(path)
-}
-
-fn index_exists(input: &Path, index: &Path) -> Result<bool> {
-    index
-        .try_exists()
-        .map_err(|error| index_error(input, index, error))
 }
 
 fn detect_source(input: &Path) -> Result<(Format, Compression)> {
@@ -556,14 +469,6 @@ fn record_error(input: &Path, error: io::Error) -> RsomicsError {
 fn query_error(input: &Path, region: impl std::fmt::Display, error: io::Error) -> RsomicsError {
     RsomicsError::InvalidInput(format!(
         "querying region {region} from {}: {error}",
-        input.display()
-    ))
-}
-
-fn index_error(input: &Path, index: &Path, error: io::Error) -> RsomicsError {
-    RsomicsError::InvalidInput(format!(
-        "reading alignment index {} for {}: {error}",
-        index.display(),
         input.display()
     ))
 }
