@@ -11,7 +11,7 @@ mod commands;
 mod hts_metadata;
 mod hts_quickcheck;
 mod input;
-mod sam_format;
+mod md;
 
 #[must_use]
 pub fn run_binary() -> std::process::ExitCode {

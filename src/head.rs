@@ -1,11 +1,11 @@
 use std::io::Write;
 use std::path::Path;
 
+use noodles::sam::{self, alignment::io::Write as _};
 use rsomics_common::{Result, RsomicsError};
-use rust_htslib::bam::{Read, Record};
 use serde::Serialize;
 
-use crate::{input, sam_format};
+use crate::{input, md};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Options<'a> {
@@ -23,30 +23,36 @@ pub struct Summary {
 
 pub fn write(input_path: &Path, options: Options<'_>, mut output: impl Write) -> Result<Summary> {
     let mut reader = input::open(input_path, options.reference, options.additional_threads)?;
-
-    let header_lines = write_header(
-        &mut output,
-        reader.header().as_bytes(),
-        options.header_lines,
-    )?;
+    let header = reader.read_header(input_path)?;
+    let header_bytes = format_header(&header)?;
+    let header_lines = write_header(&mut output, &header_bytes, options.header_lines)?;
+    let format = reader.format();
+    let mut reference = if format == input::Format::Cram {
+        options
+            .reference
+            .map(md::ReferenceCache::open)
+            .transpose()?
+    } else {
+        None
+    };
 
     let mut records = 0;
-    let mut record = Record::new();
-    while records < options.records {
-        let Some(result) = reader.read(&mut record) else {
-            break;
-        };
-        result.map_err(|error| {
-            RsomicsError::InvalidInput(format!(
-                "reading alignment record from {}: {error}",
-                input_path.display()
-            ))
+    if options.records > 0 {
+        let mut writer = sam::io::Writer::new(&mut output);
+        reader.visit_records(&header, input_path, |record| {
+            if format == input::Format::Cram {
+                let record = md::complete(&header, record, reference.as_mut())?;
+                writer
+                    .write_alignment_record(&header, &record)
+                    .map_err(RsomicsError::Io)?;
+            } else {
+                writer
+                    .write_alignment_record(&header, record)
+                    .map_err(RsomicsError::Io)?;
+            }
+            records += 1;
+            Ok(records < options.records)
         })?;
-
-        let line = sam_format::record(reader.header(), &record)?;
-        output.write_all(&line).map_err(RsomicsError::Io)?;
-        output.write_all(b"\n").map_err(RsomicsError::Io)?;
-        records += 1;
     }
 
     output.flush().map_err(RsomicsError::Io)?;
@@ -54,6 +60,12 @@ pub fn write(input_path: &Path, options: Options<'_>, mut output: impl Write) ->
         header_lines,
         records,
     })
+}
+
+fn format_header(header: &sam::Header) -> Result<Vec<u8>> {
+    let mut writer = sam::io::Writer::new(Vec::new());
+    writer.write_header(header).map_err(RsomicsError::Io)?;
+    Ok(writer.into_inner())
 }
 
 fn write_header(output: &mut impl Write, header: &[u8], limit: Option<usize>) -> Result<usize> {

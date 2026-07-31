@@ -1,8 +1,8 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use noodles::sam;
 use rsomics_common::{Result, RsomicsError};
-use rust_htslib::bam::Read;
 use serde::Serialize;
 
 use crate::{hts_metadata, input};
@@ -100,15 +100,18 @@ pub fn collect(inputs: &[Input], options: Options<'_>) -> Result<Report> {
     let mut entries = Vec::new();
 
     for input_spec in inputs {
-        let reader = input::open(&input_spec.path, None, 0)?;
-        let indexed = options
-            .test_index
-            .then(|| {
-                hts_metadata::has_index(&reader, &input_spec.path, input_spec.index.as_deref())
-            })
-            .transpose()?;
-        let reference = matching_reference(reader.header(), &references);
-        let mut values = sample_values(reader.header().as_bytes(), options.tag, &input_spec.path)?;
+        let mut reader = input::open(&input_spec.path, None, 0)?;
+        let header = reader.read_header(&input_spec.path)?;
+        let indexed = options.test_index.then(|| {
+            hts_metadata::has_index(
+                reader.format(),
+                &input_spec.path,
+                input_spec.index.as_deref(),
+            )
+        });
+        let reference = matching_reference(&header, &references);
+        let header_bytes = format_header(&header)?;
+        let mut values = sample_values(&header_bytes, options.tag, &input_spec.path)?;
         if values.is_empty() {
             values.push(".".to_owned());
         }
@@ -152,23 +155,20 @@ fn sample_values(header: &[u8], tag: Tag, path: &Path) -> Result<Vec<String>> {
 }
 
 fn matching_reference<'a>(
-    header: &rust_htslib::bam::HeaderView,
+    header: &sam::Header,
     references: &'a [hts_metadata::ReferenceDictionary],
 ) -> Option<&'a PathBuf> {
-    references.iter().rev().find_map(|reference| {
-        if reference.targets.len() != header.target_count() as usize {
-            return None;
-        }
-        reference
-            .targets
-            .iter()
-            .enumerate()
-            .all(|(position, (name, length))| {
-                header.tid2name(position as u32) == name
-                    && header.target_len(position as u32) == Some(*length)
-            })
-            .then_some(&reference.path)
-    })
+    let targets = hts_metadata::header_targets(header);
+    references
+        .iter()
+        .rev()
+        .find_map(|reference| (reference.targets == targets).then_some(&reference.path))
+}
+
+fn format_header(header: &sam::Header) -> Result<Vec<u8>> {
+    let mut writer = sam::io::Writer::new(Vec::new());
+    writer.write_header(header).map_err(RsomicsError::Io)?;
+    Ok(writer.into_inner())
 }
 
 struct SamtoolsStringSet {

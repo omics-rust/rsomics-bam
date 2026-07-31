@@ -1,12 +1,8 @@
-#![allow(unsafe_code)]
-
-use std::ffi::{CStr, CString};
 use std::path::{Path, PathBuf};
-use std::ptr;
 
+use noodles::{bam, cram, csi, fasta, sam};
+use noodles_util::alignment;
 use rsomics_common::{Result, RsomicsError};
-use rust_htslib::bam::{Read, Reader};
-use rust_htslib::htslib;
 
 pub(crate) struct ReferenceDictionary {
     pub path: PathBuf,
@@ -14,50 +10,20 @@ pub(crate) struct ReferenceDictionary {
 }
 
 pub(crate) fn load_reference(path: &Path) -> Result<ReferenceDictionary> {
-    let path_string = c_path(path)?;
-    let mut targets = Vec::new();
-
-    // The faidx handle owns every returned name and remains live until all names are copied.
-    unsafe {
-        let index = htslib::fai_load(path_string.as_ptr());
-        if index.is_null() {
-            return Err(RsomicsError::InvalidInput(format!(
-                "loading reference index for {}",
-                path.display()
-            )));
-        }
-
-        let count = htslib::faidx_nseq(index);
-        if count < 0 {
-            htslib::fai_destroy(index);
-            return Err(RsomicsError::InvalidInput(format!(
-                "reading reference index for {}",
-                path.display()
-            )));
-        }
-
-        for position in 0..count {
-            let name = htslib::faidx_iseq(index, position);
-            if name.is_null() {
-                htslib::fai_destroy(index);
-                return Err(RsomicsError::InvalidInput(format!(
-                    "reading reference name {position} from {}",
-                    path.display()
-                )));
-            }
-            let length = htslib::faidx_seq_len64(index, name);
-            if length < 0 {
-                htslib::fai_destroy(index);
-                return Err(RsomicsError::InvalidInput(format!(
-                    "reading reference length {position} from {}",
-                    path.display()
-                )));
-            }
-            targets.push((CStr::from_ptr(name).to_bytes().to_vec(), length as u64));
-        }
-
-        htslib::fai_destroy(index);
-    }
+    let mut index_path = path.as_os_str().to_os_string();
+    index_path.push(".fai");
+    let index_path = PathBuf::from(index_path);
+    let index = fasta::fai::fs::read(&index_path).map_err(|error| {
+        RsomicsError::InvalidInput(format!(
+            "loading reference index {}: {error}",
+            index_path.display()
+        ))
+    })?;
+    let records: &[fasta::fai::Record] = index.as_ref();
+    let targets = records
+        .iter()
+        .map(|record| (record.name().to_vec(), record.length()))
+        .collect();
 
     Ok(ReferenceDictionary {
         path: path.to_path_buf(),
@@ -65,29 +31,35 @@ pub(crate) fn load_reference(path: &Path) -> Result<ReferenceDictionary> {
     })
 }
 
-pub(crate) fn has_index(reader: &Reader, alignment: &Path, index: Option<&Path>) -> Result<bool> {
-    let alignment = c_path(alignment)?;
-    let index = index.map(c_path).transpose()?;
-
-    // The loaded index is independent of the reader and is destroyed before returning.
-    let loaded = unsafe {
-        htslib::sam_index_load3(
-            reader.htsfile(),
-            alignment.as_ptr(),
-            index.as_ref().map_or(ptr::null(), |path| path.as_ptr()),
-            htslib::HTS_IDX_SILENT_FAIL as libc::c_int,
-        )
+pub(crate) fn has_index(
+    format: crate::input::Format,
+    alignment_path: &Path,
+    index_path: Option<&Path>,
+) -> bool {
+    let Some(index_path) = index_path else {
+        return alignment::io::indexed_reader::Builder::default()
+            .build_from_path(alignment_path)
+            .is_ok();
     };
-    if loaded.is_null() {
-        Ok(false)
-    } else {
-        unsafe { htslib::hts_idx_destroy(loaded) };
-        Ok(true)
+
+    match format {
+        crate::input::Format::Sam => csi::fs::read(index_path).is_ok(),
+        crate::input::Format::Bam => {
+            bam::bai::fs::read(index_path).is_ok() || csi::fs::read(index_path).is_ok()
+        }
+        crate::input::Format::Cram => cram::crai::fs::read(index_path).is_ok(),
     }
 }
 
-fn c_path(path: &Path) -> Result<CString> {
-    CString::new(path.as_os_str().as_encoded_bytes()).map_err(|_| {
-        RsomicsError::InvalidInput(format!("path contains a null byte: {}", path.display()))
-    })
+pub(crate) fn header_targets(header: &sam::Header) -> Vec<(Vec<u8>, u64)> {
+    header
+        .reference_sequences()
+        .iter()
+        .map(|(name, sequence)| {
+            (
+                name.to_vec(),
+                u64::try_from(usize::from(sequence.length())).unwrap(),
+            )
+        })
+        .collect()
 }

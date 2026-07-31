@@ -192,6 +192,18 @@ fn head_limits_headers_and_records() {
 }
 
 #[test]
+fn head_reads_alignment_from_stdin() {
+    let mut command = binary();
+    command.args(["head", "-n", "1", "-"]);
+    let output = run_with_stdin(command, &fs::read(golden("records.sam")).unwrap());
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(text.lines().count(), 4, "{text}");
+    assert!(
+        text.ends_with("read1\t99\tchr1\t1\t60\t8M\t=\t17\t24\tACGTACGT\tIIIIIIII\tRG:Z:rg1\n")
+    );
+}
+
+#[test]
 fn head_rejects_json_stream_mixing() {
     let input = golden("records.sam");
     let output = binary()
@@ -448,6 +460,91 @@ fn head_matches_samtools_1_24_for_sam_bam_and_cram() {
             assert_eq!(ours.stdout, oracle.stdout, "{}", input.display());
         }
     }
+}
+
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn head_stdin_matches_samtools_1_24_for_sam_bam_and_cram() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let inputs = build_alignment_set(directory.path());
+
+    for input in [&inputs.sam, &inputs.bam, &inputs.cram] {
+        let bytes = fs::read(input).unwrap();
+
+        let mut ours = binary();
+        ours.args(["head", "-n", "2"]);
+        if input == &inputs.cram {
+            ours.args(["--reference", inputs.reference.to_str().unwrap()]);
+        }
+        ours.arg("-");
+
+        let mut oracle = Command::new("samtools");
+        oracle.args(["head", "-n", "2"]);
+        if input == &inputs.cram {
+            oracle.args(["-T", inputs.reference.to_str().unwrap()]);
+        }
+        oracle.arg("-");
+
+        let ours = run_with_stdin(ours, &bytes);
+        let oracle = run_with_stdin(oracle, &bytes);
+        assert_eq!(ours.stdout, oracle.stdout, "{}", input.display());
+    }
+}
+
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn head_restores_cram_md_and_nm_like_samtools_1_24() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let reference = directory.path().join("reference.fa");
+    let sam = directory.path().join("cigar-cases.sam");
+    let cram = directory.path().join("cigar-cases.cram");
+    fs::copy(golden("reference.fa"), &reference).unwrap();
+    fs::write(
+        &sam,
+        b"@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:40\n\
+mismatch\t0\tchr1\t1\t60\t8M\t*\t0\t0\tACGTTCGT\t*\n\
+insertion\t0\tchr1\t1\t60\t4M2I4M\t*\t0\t0\tACGTTTACGT\t*\n\
+deletion\t0\tchr1\t1\t60\t4M2D4M\t*\t0\t0\tACGTGTAC\t*\n\
+skip\t0\tchr1\t1\t60\t4M2N4M\t*\t0\t0\tACGTGTAC\t*\n\
+ambiguous\t0\tchr1\t1\t60\t4M\t*\t0\t0\tNNNN\t*\n\
+equal\t0\tchr1\t1\t60\t4M\t*\t0\t0\t====\t*\n",
+    )
+    .unwrap();
+
+    run_samtools(&["faidx", reference.to_str().unwrap()]);
+    run_samtools(&[
+        "view",
+        "-C",
+        "-T",
+        reference.to_str().unwrap(),
+        "-o",
+        cram.to_str().unwrap(),
+        sam.to_str().unwrap(),
+    ]);
+
+    let ours = run_ours(&[
+        "head",
+        "-H",
+        "0",
+        "-n",
+        "6",
+        "--reference",
+        reference.to_str().unwrap(),
+        cram.to_str().unwrap(),
+    ]);
+    let oracle = run_samtools(&[
+        "head",
+        "-h",
+        "0",
+        "-n",
+        "6",
+        "-T",
+        reference.to_str().unwrap(),
+        cram.to_str().unwrap(),
+    ]);
+    assert_eq!(ours.stdout, oracle.stdout);
 }
 
 #[test]

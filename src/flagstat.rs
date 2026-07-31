@@ -1,8 +1,11 @@
 use std::fmt;
 use std::path::Path;
 
+use noodles::sam::{
+    self,
+    alignment::{Record, record::MappingQuality},
+};
 use rsomics_common::{Result, RsomicsError};
-use rust_htslib::bam::{Read, Record};
 use serde::Serialize;
 
 use crate::input;
@@ -46,25 +49,19 @@ pub struct Options<'a> {
 
 pub fn count(input_path: &Path, options: Options<'_>) -> Result<Counts> {
     let mut reader = input::open(input_path, options.reference, options.additional_threads)?;
+    let header = reader.read_header(input_path)?;
     let mut counts = Counts::default();
-    let mut record = Record::new();
-
-    while let Some(result) = reader.read(&mut record) {
-        result.map_err(|error| {
-            RsomicsError::InvalidInput(format!(
-                "reading alignment record from {}: {error}",
-                input_path.display()
-            ))
-        })?;
-        counts.tally(&record);
-    }
+    reader.visit_records(&header, input_path, |record| {
+        counts.tally(record, &header)?;
+        Ok(true)
+    })?;
 
     Ok(counts)
 }
 
 impl Counts {
-    pub fn tally(&mut self, record: &Record) {
-        let flags = record.flags();
+    fn tally(&mut self, record: &dyn Record, header: &sam::Header) -> Result<()> {
+        let flags = u16::from(record.flags().map_err(RsomicsError::Io)?);
         let category = usize::from(flags & QCFAIL != 0);
         let secondary = flags & SECONDARY != 0;
         let supplementary = flags & SUPPLEMENTARY != 0;
@@ -91,9 +88,22 @@ impl Counts {
                 let mate_mapped = flags & MATE_UNMAPPED == 0;
                 if mapped && mate_mapped {
                     self.both_mapped[category] += 1;
-                    if record.tid() != record.mtid() {
+                    let reference_id = record
+                        .reference_sequence_id(header)
+                        .transpose()
+                        .map_err(RsomicsError::Io)?;
+                    let mate_reference_id = record
+                        .mate_reference_sequence_id(header)
+                        .transpose()
+                        .map_err(RsomicsError::Io)?;
+                    if reference_id != mate_reference_id {
                         self.mate_different_reference[category] += 1;
-                        if record.mapq() >= 5 {
+                        if record
+                            .mapping_quality()
+                            .transpose()
+                            .map_err(RsomicsError::Io)?
+                            .is_some_and(|quality| quality >= MappingQuality::new(5).unwrap())
+                        {
                             self.mate_different_reference_mapq5[category] += 1;
                         }
                     }
@@ -116,6 +126,8 @@ impl Counts {
                 self.primary_duplicates[category] += 1;
             }
         }
+
+        Ok(())
     }
 
     pub fn to_tsv(&self) -> String {
@@ -318,20 +330,34 @@ fn percentage(numerator: u64, denominator: u64) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use noodles::sam::alignment::{
+        RecordBuf,
+        record::{Flags, MappingQuality},
+    };
 
-    fn record(flags: u16, tid: i32, mtid: i32, mapq: u8) -> Record {
-        let mut record = Record::new();
-        record.set_flags(flags);
-        record.set_tid(tid);
-        record.set_mtid(mtid);
-        record.set_mapq(mapq);
-        record
+    fn record(flags: u16, tid: i32, mtid: i32, mapq: u8) -> RecordBuf {
+        let mut builder = RecordBuf::builder().set_flags(Flags::from(flags));
+        if let Ok(reference_id) = usize::try_from(tid) {
+            builder = builder.set_reference_sequence_id(reference_id);
+        }
+        if let Ok(reference_id) = usize::try_from(mtid) {
+            builder = builder.set_mate_reference_sequence_id(reference_id);
+        }
+        if let Some(mapping_quality) = MappingQuality::new(mapq) {
+            builder = builder.set_mapping_quality(mapping_quality);
+        }
+        builder.build()
     }
 
     #[test]
     fn secondary_wins_over_supplementary() {
         let mut counts = Counts::default();
-        counts.tally(&record(SECONDARY | SUPPLEMENTARY, -1, -1, 0));
+        counts
+            .tally(
+                &record(SECONDARY | SUPPLEMENTARY, -1, -1, 0),
+                &sam::Header::default(),
+            )
+            .unwrap();
         assert_eq!(counts.secondary, [1, 0]);
         assert_eq!(counts.supplementary, [0, 0]);
         assert_eq!(counts.primary, [0, 0]);
@@ -340,8 +366,15 @@ mod tests {
     #[test]
     fn qc_categories_and_primary_counts_are_independent() {
         let mut counts = Counts::default();
-        counts.tally(&record(0, 0, -1, 60));
-        counts.tally(&record(QCFAIL | DUPLICATE, 0, -1, 60));
+        counts
+            .tally(&record(0, 0, -1, 60), &sam::Header::default())
+            .unwrap();
+        counts
+            .tally(
+                &record(QCFAIL | DUPLICATE, 0, -1, 60),
+                &sam::Header::default(),
+            )
+            .unwrap();
         assert_eq!(counts.total, [1, 1]);
         assert_eq!(counts.primary, [1, 1]);
         assert_eq!(counts.primary_duplicates, [0, 1]);
@@ -350,8 +383,18 @@ mod tests {
     #[test]
     fn paired_metrics_follow_samtools_branching() {
         let mut counts = Counts::default();
-        counts.tally(&record(PAIRED | PROPER_PAIR | READ1, 0, 0, 60));
-        counts.tally(&record(PAIRED | READ2 | MATE_UNMAPPED, 1, -1, 4));
+        counts
+            .tally(
+                &record(PAIRED | PROPER_PAIR | READ1, 0, 0, 60),
+                &sam::Header::default(),
+            )
+            .unwrap();
+        counts
+            .tally(
+                &record(PAIRED | READ2 | MATE_UNMAPPED, 1, -1, 4),
+                &sam::Header::default(),
+            )
+            .unwrap();
         assert_eq!(counts.paired, [2, 0]);
         assert_eq!(counts.properly_paired, [1, 0]);
         assert_eq!(counts.both_mapped, [1, 0]);
