@@ -1,11 +1,17 @@
 use std::io::Write;
 use std::path::Path;
 
-use noodles::sam::{self, alignment::io::Write as _};
 use rsomics_common::{Result, RsomicsError};
 use serde::Serialize;
 
-use crate::{filter::Filter, input, md};
+use crate::{filter::Filter, input, md, output};
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Format {
+    #[default]
+    Sam,
+    Bam,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Options<'a> {
@@ -17,6 +23,7 @@ pub struct Options<'a> {
     pub include_flags: u16,
     pub exclude_all_flags: u16,
     pub minimum_mapping_quality: u8,
+    pub output_format: Format,
     pub reference: Option<&'a Path>,
     pub additional_threads: usize,
 }
@@ -32,11 +39,6 @@ pub fn write(input_path: &Path, options: Options<'_>, mut output: impl Write) ->
     let header = reader.read_header(input_path)?;
     let format = reader.format();
 
-    if options.with_header || options.header_only {
-        let mut writer = sam::io::Writer::new(&mut output);
-        writer.write_header(&header).map_err(RsomicsError::Io)?;
-    }
-
     let filter = Filter {
         require_all: options.require_flags,
         exclude_any: options.exclude_flags,
@@ -47,8 +49,26 @@ pub fn write(input_path: &Path, options: Options<'_>, mut output: impl Write) ->
     let mut selected = 0u64;
     let mut rejected = 0u64;
 
-    if !options.header_only {
-        let mut reference = if format == input::Format::Cram && !options.count_only {
+    if options.count_only {
+        reader.visit_records(&header, input_path, |record| {
+            if filter.accepts(record)? {
+                selected = selected.checked_add(1).ok_or_else(count_overflow)?;
+            } else {
+                rejected = rejected.checked_add(1).ok_or_else(count_overflow)?;
+            }
+            Ok(true)
+        })?;
+    } else {
+        let output_format = match options.output_format {
+            Format::Sam => output::Format::Sam,
+            Format::Bam => output::Format::Bam,
+        };
+        let mut writer = output::Writer::new(output_format, &mut output);
+        if options.with_header || options.header_only || options.output_format != Format::Sam {
+            writer.write_header(&header)?;
+        }
+
+        let mut reference = if format == input::Format::Cram {
             options
                 .reference
                 .map(md::ReferenceCache::open)
@@ -56,31 +76,26 @@ pub fn write(input_path: &Path, options: Options<'_>, mut output: impl Write) ->
         } else {
             None
         };
-        let mut writer = sam::io::Writer::new(&mut output);
 
-        reader.visit_records(&header, input_path, |record| {
-            if filter.accepts(record)? {
-                selected = selected.checked_add(1).ok_or_else(count_overflow)?;
-                if !options.count_only {
+        if !options.header_only {
+            reader.visit_records(&header, input_path, |record| {
+                if filter.accepts(record)? {
+                    selected = selected.checked_add(1).ok_or_else(count_overflow)?;
                     if format == input::Format::Cram {
                         let record = md::complete(&header, record, reference.as_mut())?;
-                        writer
-                            .write_alignment_record(&header, &record)
-                            .map_err(RsomicsError::Io)?;
+                        writer.write_record(&header, &record)?;
                     } else {
-                        writer
-                            .write_alignment_record(&header, record)
-                            .map_err(RsomicsError::Io)?;
+                        writer.write_record(&header, record)?;
                     }
+                } else {
+                    rejected = rejected.checked_add(1).ok_or_else(count_overflow)?;
                 }
-            } else {
-                rejected = rejected.checked_add(1).ok_or_else(count_overflow)?;
-            }
-            Ok(true)
-        })?;
+                Ok(true)
+            })?;
+        }
+        writer.finish(&header)?;
     }
 
-    output.flush().map_err(RsomicsError::Io)?;
     Ok(Summary { selected, rejected })
 }
 

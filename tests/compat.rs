@@ -292,6 +292,48 @@ fn view_commits_file_output_only_after_success() {
 }
 
 #[test]
+fn view_writes_finished_bam_by_flag_and_extension() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = golden("records.sam");
+
+    for (output, options) in [
+        (directory.path().join("inferred.bam"), Vec::new()),
+        (directory.path().join("explicit.data"), vec!["-O", "bam"]),
+    ] {
+        let mut command = binary();
+        command
+            .arg("view")
+            .args(options)
+            .args(["-o"])
+            .arg(&output)
+            .arg(&input);
+        let created = command.output().unwrap();
+        assert!(
+            created.status.success(),
+            "{}",
+            String::from_utf8_lossy(&created.stderr)
+        );
+
+        let decoded = run_ours(&["view", output.to_str().unwrap()]);
+        assert_eq!(
+            decoded.stdout,
+            fs::read_to_string(&input)
+                .unwrap()
+                .lines()
+                .filter(|line| !line.starts_with('@'))
+                .map(|line| format!("{line}\n"))
+                .collect::<String>()
+                .as_bytes()
+        );
+        assert!(
+            run_ours(&["quickcheck", output.to_str().unwrap()])
+                .stdout
+                .is_empty()
+        );
+    }
+}
+
+#[test]
 fn quickcheck_accepts_sam_and_bam() {
     for input in [golden("records.sam"), golden("flagstat-small.bam")] {
         let output = run_ours(&["quickcheck", input.to_str().unwrap()]);
@@ -676,6 +718,45 @@ fn view_matches_samtools_1_24_for_streaming_filters() {
                 input.display()
             );
         }
+    }
+}
+
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn view_bam_output_matches_samtools_1_24_for_sam_bam_and_cram() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let inputs = build_alignment_set(directory.path());
+
+    for (position, input) in [&inputs.sam, &inputs.bam, &inputs.cram]
+        .into_iter()
+        .enumerate()
+    {
+        let ours_path = directory.path().join(format!("ours-{position}.bam"));
+        let oracle_path = directory.path().join(format!("oracle-{position}.bam"));
+
+        let mut ours = binary();
+        ours.args(["view", "-b", "-f", "paired", "-o"])
+            .arg(&ours_path);
+        if input == &inputs.cram {
+            ours.args(["-T", inputs.reference.to_str().unwrap()]);
+        }
+        ours.arg(input);
+        run(ours);
+
+        let mut oracle = Command::new("samtools");
+        oracle
+            .args(["view", "--no-PG", "-b", "-f", "paired", "-o"])
+            .arg(&oracle_path);
+        if input == &inputs.cram {
+            oracle.args(["-T", inputs.reference.to_str().unwrap()]);
+        }
+        oracle.arg(input);
+        run(oracle);
+
+        let ours = run_samtools(&["view", "--no-PG", "-h", ours_path.to_str().unwrap()]);
+        let oracle = run_samtools(&["view", "--no-PG", "-h", oracle_path.to_str().unwrap()]);
+        assert_eq!(ours.stdout, oracle.stdout, "{}", input.display());
     }
 }
 

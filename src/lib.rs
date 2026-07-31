@@ -14,6 +14,7 @@ mod hts_metadata;
 mod hts_quickcheck;
 mod input;
 mod md;
+mod output;
 
 #[must_use]
 pub fn run_binary() -> std::process::ExitCode {

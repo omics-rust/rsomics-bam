@@ -1,11 +1,17 @@
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-use clap::{ArgAction, Args};
+use clap::{ArgAction, Args, ValueEnum};
 use rsomics_common::{Result, RsomicsError};
 
 use crate::cli::CommandOutput;
 use crate::{flags, view};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum Format {
+    Sam,
+    Bam,
+}
 
 #[derive(Debug, Args)]
 #[command(disable_help_flag = true)]
@@ -33,6 +39,14 @@ pub(crate) struct Arguments {
     /// Write output to a file
     #[arg(short = 'o', long, value_name = "FILE")]
     output: Option<PathBuf>,
+
+    /// Write BAM output
+    #[arg(short = 'b', long, conflicts_with = "format")]
+    bam: bool,
+
+    /// Select the output alignment format
+    #[arg(short = 'O', long = "output-fmt", value_enum, conflicts_with = "bam")]
+    format: Option<Format>,
 
     /// Require all FLAG bits
     #[arg(short = 'f', long, value_name = "FLAG", value_parser = parse_flags)]
@@ -88,6 +102,7 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
         include_flags: arguments.include_flags.unwrap_or_default(),
         exclude_all_flags: arguments.exclude_all_flags.unwrap_or_default(),
         minimum_mapping_quality: arguments.minimum_mapping_quality,
+        output_format: output_format(&arguments),
         reference: arguments.reference.as_deref(),
         additional_threads: arguments.threads,
     };
@@ -155,4 +170,26 @@ fn run_to_path(input: &Path, options: view::Options<'_>, output: &Path) -> Resul
 
 fn parse_flags(value: &str) -> std::result::Result<u16, String> {
     flags::parse(value).map_err(|error| error.to_string())
+}
+
+fn output_format(arguments: &Arguments) -> view::Format {
+    if arguments.bam {
+        return view::Format::Bam;
+    }
+    if let Some(format) = arguments.format {
+        return match format {
+            Format::Sam => view::Format::Sam,
+            Format::Bam => view::Format::Bam,
+        };
+    }
+
+    match arguments
+        .output
+        .as_deref()
+        .and_then(Path::extension)
+        .and_then(|extension| extension.to_str())
+    {
+        Some("bam") => view::Format::Bam,
+        _ => view::Format::Sam,
+    }
 }
