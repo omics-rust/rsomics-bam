@@ -7,6 +7,7 @@ pub mod quickcheck;
 pub mod samples;
 
 mod cli;
+mod commands;
 mod hts_metadata;
 mod hts_quickcheck;
 mod input;
