@@ -206,24 +206,17 @@ pub(crate) fn open(
             bgzf::io::Reader::new(BufReader::new(file)),
         )),
         (Format::Bam, Compression::Bgzf) => {
-            let workers = additional_threads
-                .checked_add(1)
-                .and_then(NonZero::new)
-                .ok_or_else(|| {
-                    RsomicsError::ConfigError(
-                        "alignment thread count exceeds the supported range".to_owned(),
-                    )
-                })?;
-            let inner: Box<dyn BufRead + Send> = if workers.get() == 1 {
-                Box::new(bgzf::io::Reader::new(BufReader::with_capacity(
-                    READ_BUFFER,
-                    file,
-                )))
-            } else {
-                Box::new(bgzf::io::MultithreadedReader::with_worker_count(
-                    workers, file,
-                ))
-            };
+            let inner: Box<dyn BufRead + Send> =
+                if let Some(workers) = additional_threads.checked_sub(1).and_then(NonZero::new) {
+                    Box::new(bgzf::io::MultithreadedReader::with_worker_count(
+                        workers, file,
+                    ))
+                } else {
+                    Box::new(bgzf::io::Reader::new(BufReader::with_capacity(
+                        READ_BUFFER,
+                        file,
+                    )))
+                };
             Inner::Bam(bam::io::Reader::from(inner))
         }
         (Format::Bam, Compression::None) => {

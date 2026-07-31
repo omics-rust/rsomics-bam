@@ -84,7 +84,7 @@ pub(crate) struct Arguments {
     #[arg(short = 'T', long, value_name = "FASTA")]
     reference: Option<PathBuf>,
 
-    /// Additional alignment decompression threads
+    /// Additional alignment I/O thread budget
     #[arg(short = '@', long, value_name = "INT", default_value_t = 0)]
     threads: usize,
 
@@ -127,7 +127,7 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
     } else if let Some(path) = arguments.output.as_deref() {
         run_to_path(input, options, path)?
     } else {
-        run_to(input, options, io::stdout().lock())?
+        run_to(input, options, io::stdout())?
     };
 
     Ok(CommandOutput::View { summary })
@@ -136,14 +136,16 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
 fn run_to(
     input: &std::path::Path,
     options: view::Options<'_>,
-    mut output: impl Write,
+    mut output: impl Write + Send + 'static,
 ) -> Result<view::Summary> {
-    let summary = view::write(input, options, &mut output)?;
     if options.count_only {
+        let summary = view::write(input, options, io::sink())?;
         writeln!(output, "{}", summary.selected).map_err(RsomicsError::Io)?;
         output.flush().map_err(RsomicsError::Io)?;
+        Ok(summary)
+    } else {
+        view::write(input, options, output)
     }
-    Ok(summary)
 }
 
 fn run_to_path(input: &Path, options: view::Options<'_>, output: &Path) -> Result<view::Summary> {
@@ -163,7 +165,16 @@ fn run_to_path(input: &Path, options: view::Options<'_>, output: &Path) -> Resul
             ),
         ))
     })?;
-    let summary = run_to(input, options, BufWriter::new(temporary.as_file_mut()))?;
+    let file = temporary.reopen().map_err(|error| {
+        RsomicsError::Io(io::Error::new(
+            error.kind(),
+            format!(
+                "opening temporary output beside {}: {error}",
+                output.display()
+            ),
+        ))
+    })?;
+    let summary = run_to(input, options, BufWriter::new(file))?;
     temporary
         .as_file_mut()
         .sync_all()

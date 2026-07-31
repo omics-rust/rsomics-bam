@@ -67,16 +67,31 @@ pub struct Summary {
     pub rejected: u64,
 }
 
-pub fn write(input_path: &Path, options: Options<'_>, mut output: impl Write) -> Result<Summary> {
-    if !options.regions.is_empty() && options.additional_threads > 0 && !options.header_only {
+pub fn write<W>(input_path: &Path, options: Options<'_>, output: W) -> Result<Summary>
+where
+    W: Write + Send + 'static,
+{
+    let parallel_output = !options.count_only
+        && options.output_format == Format::Bam
+        && options.additional_threads > 0;
+    if !options.regions.is_empty()
+        && options.additional_threads > 0
+        && !options.header_only
+        && !parallel_output
+    {
         return Err(RsomicsError::ConfigError(
             "additional decoding threads are not available for indexed region queries yet"
                 .to_owned(),
         ));
     }
 
+    let input_threads = if parallel_output {
+        0
+    } else {
+        options.additional_threads
+    };
     let mut reader = if options.regions.is_empty() || options.header_only {
-        input::open(input_path, options.reference, options.additional_threads)?
+        input::open(input_path, options.reference, input_threads)?
     } else {
         input::open_indexed(input_path, options.reference)?
     };
@@ -118,7 +133,12 @@ pub fn write(input_path: &Path, options: Options<'_>, mut output: impl Write) ->
             Compression::Fast => output::Compression::Fast,
             Compression::Uncompressed => output::Compression::Uncompressed,
         };
-        let mut writer = output::Writer::new(output_format, compression, &mut output);
+        let mut writer = output::Writer::new(
+            output_format,
+            compression,
+            options.additional_threads,
+            output,
+        );
         if options.with_header || options.header_only || options.output_format != Format::Sam {
             writer.write_header(&header)?;
         }

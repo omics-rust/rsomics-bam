@@ -381,6 +381,48 @@ fn view_controls_bam_compression() {
 }
 
 #[test]
+fn view_writes_parallel_bam_within_the_thread_budget() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = golden("records.sam");
+    let bam = directory.path().join("parallel.bam");
+    run_ours(&[
+        "view",
+        "-@",
+        "2",
+        "-b",
+        "-o",
+        bam.to_str().unwrap(),
+        input.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        run_ours(&["view", bam.to_str().unwrap()]).stdout,
+        run_ours(&["view", input.to_str().unwrap()]).stdout
+    );
+    assert!(
+        run_ours(&["quickcheck", bam.to_str().unwrap()])
+            .stdout
+            .is_empty()
+    );
+
+    let index = noodles::bam::fs::index(&bam).unwrap();
+    noodles::bam::bai::fs::write(appended_extension(&bam, "bai"), &index).unwrap();
+    let region = directory.path().join("region.bam");
+    run_ours(&[
+        "view",
+        "-@",
+        "2",
+        "-b",
+        "-o",
+        region.to_str().unwrap(),
+        bam.to_str().unwrap(),
+        "chr1:17-24",
+    ]);
+    let records = String::from_utf8(run_ours(&["view", region.to_str().unwrap()]).stdout).unwrap();
+    assert_eq!(records.lines().count(), 1);
+    assert!(records.starts_with("read1\t147\tchr1\t17\t"));
+}
+
+#[test]
 fn view_queries_indexed_regions_in_order() {
     let directory = tempfile::tempdir().unwrap();
     let bam = directory.path().join("records.bam");
@@ -872,7 +914,7 @@ fn view_bam_output_matches_samtools_1_24_for_sam_bam_and_cram() {
         let oracle_path = directory.path().join(format!("oracle-{position}.bam"));
 
         let mut ours = binary();
-        ours.args(["view", "-b", "-f", "paired", "-o"])
+        ours.args(["view", "-@", "2", "-b", "-f", "paired", "-o"])
             .arg(&ours_path);
         if input == &inputs.cram {
             ours.args(["-T", inputs.reference.to_str().unwrap()]);
@@ -882,7 +924,7 @@ fn view_bam_output_matches_samtools_1_24_for_sam_bam_and_cram() {
 
         let mut oracle = Command::new("samtools");
         oracle
-            .args(["view", "--no-PG", "-b", "-f", "paired", "-o"])
+            .args(["view", "--no-PG", "-@", "2", "-b", "-f", "paired", "-o"])
             .arg(&oracle_path);
         if input == &inputs.cram {
             oracle.args(["-T", inputs.reference.to_str().unwrap()]);
