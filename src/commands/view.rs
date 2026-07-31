@@ -1,9 +1,11 @@
 use std::ffi::OsStr;
+use std::fs;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use clap::{ArgAction, Args, ValueEnum};
 use rsomics_common::{Result, RsomicsError};
+use serde::Serialize;
 
 use crate::cli::CommandOutput;
 use crate::{flags, view};
@@ -48,6 +50,10 @@ pub(crate) struct Arguments {
     /// Write output to a file
     #[arg(short = 'o', long, value_name = "FILE")]
     output: Option<PathBuf>,
+
+    /// Write processed, accepted, and rejected record counts as JSON
+    #[arg(long, value_name = "FILE")]
+    save_counts: Option<PathBuf>,
 
     /// Write BAM output
     #[arg(short = 'b', long, conflicts_with = "format")]
@@ -134,6 +140,11 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
         program,
     };
     let input = arguments.input.as_deref().unwrap_or_else(|| Path::new("-"));
+    validate_count_output(
+        input,
+        arguments.output.as_deref(),
+        arguments.save_counts.as_deref(),
+    )?;
 
     let summary = if json {
         view::write(input, options, io::sink())?
@@ -142,6 +153,9 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
     } else {
         run_to(input, options, io::stdout())?
     };
+    if let Some(path) = arguments.save_counts.as_deref() {
+        write_counts(path, summary)?;
+    }
 
     Ok(CommandOutput::View { summary })
 }
@@ -173,49 +187,156 @@ fn run_to(
 }
 
 fn run_to_path(input: &Path, options: view::Options<'_>, output: &Path) -> Result<view::Summary> {
-    let parent = output
+    let transaction = TransactionalFile::new(output)?;
+    let file = transaction.reopen()?;
+    let summary = run_to(input, options, BufWriter::new(file))?;
+    transaction.commit()?;
+    Ok(summary)
+}
+
+#[derive(Serialize)]
+struct SavedCounts {
+    records_processed: u64,
+    records_filter_accepted: u64,
+    records_filter_rejected: u64,
+}
+
+fn write_counts(path: &Path, summary: view::Summary) -> Result<()> {
+    let counts = SavedCounts {
+        records_processed: summary
+            .selected
+            .checked_add(summary.rejected)
+            .ok_or_else(|| {
+                RsomicsError::InvalidInput("processed alignment count exceeds u64".to_owned())
+            })?,
+        records_filter_accepted: summary.selected,
+        records_filter_rejected: summary.rejected,
+    };
+    let mut data = serde_json::to_vec_pretty(&counts)
+        .map_err(|error| RsomicsError::InvalidInput(format!("serializing counts: {error}")))?;
+    data.push(b'\n');
+
+    let mut transaction = TransactionalFile::new(path)?;
+    transaction
+        .temporary
+        .as_file_mut()
+        .write_all(&data)
+        .map_err(RsomicsError::Io)?;
+    transaction.commit()
+}
+
+fn validate_count_output(input: &Path, output: Option<&Path>, counts: Option<&Path>) -> Result<()> {
+    let Some(counts) = counts else {
+        return Ok(());
+    };
+    if counts == Path::new("-") {
+        return Err(RsomicsError::ConfigError(
+            "--save-counts requires a named file".to_owned(),
+        ));
+    }
+    if input != Path::new("-") && same_target(input, counts)? {
+        return Err(RsomicsError::ConfigError(
+            "--save-counts cannot overwrite the alignment input".to_owned(),
+        ));
+    }
+    if let Some(output) = output
+        && same_target(output, counts)?
+    {
+        return Err(RsomicsError::ConfigError(
+            "--save-counts and --output require different files".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn same_target(left: &Path, right: &Path) -> Result<bool> {
+    Ok(target_identity(left)? == target_identity(right)?)
+}
+
+fn target_identity(path: &Path) -> Result<PathBuf> {
+    match fs::canonicalize(path) {
+        Ok(path) => return Ok(path),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(RsomicsError::Io(error)),
+    }
+    let name = path.file_name().ok_or_else(|| {
+        RsomicsError::ConfigError(format!("output path has no file name: {}", path.display()))
+    })?;
+    let parent = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    let permissions = std::fs::metadata(output)
-        .ok()
-        .map(|metadata| metadata.permissions());
-    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(|error| {
-        RsomicsError::Io(io::Error::new(
-            error.kind(),
-            format!(
-                "creating temporary output beside {}: {error}",
-                output.display()
-            ),
-        ))
-    })?;
-    let file = temporary.reopen().map_err(|error| {
-        RsomicsError::Io(io::Error::new(
-            error.kind(),
-            format!(
-                "opening temporary output beside {}: {error}",
-                output.display()
-            ),
-        ))
-    })?;
-    let summary = run_to(input, options, BufWriter::new(file))?;
-    temporary
-        .as_file_mut()
-        .sync_all()
-        .map_err(RsomicsError::Io)?;
-    if let Some(permissions) = permissions {
-        temporary
-            .as_file_mut()
-            .set_permissions(permissions)
-            .map_err(RsomicsError::Io)?;
+    fs::canonicalize(parent)
+        .map(|parent| parent.join(name))
+        .map_err(RsomicsError::Io)
+}
+
+struct TransactionalFile<'a> {
+    target: &'a Path,
+    temporary: tempfile::NamedTempFile,
+    permissions: Option<fs::Permissions>,
+}
+
+impl<'a> TransactionalFile<'a> {
+    fn new(target: &'a Path) -> Result<Self> {
+        let parent = target
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let temporary = tempfile::NamedTempFile::new_in(parent).map_err(|error| {
+            RsomicsError::Io(io::Error::new(
+                error.kind(),
+                format!(
+                    "creating temporary output beside {}: {error}",
+                    target.display()
+                ),
+            ))
+        })?;
+        let permissions = fs::metadata(target)
+            .ok()
+            .map(|metadata| metadata.permissions());
+        Ok(Self {
+            target,
+            temporary,
+            permissions,
+        })
     }
-    temporary.persist(output).map_err(|error| {
-        RsomicsError::Io(io::Error::new(
-            error.error.kind(),
-            format!("committing output {}: {}", output.display(), error.error),
-        ))
-    })?;
-    Ok(summary)
+
+    fn reopen(&self) -> Result<fs::File> {
+        self.temporary.reopen().map_err(|error| {
+            RsomicsError::Io(io::Error::new(
+                error.kind(),
+                format!(
+                    "opening temporary output beside {}: {error}",
+                    self.target.display()
+                ),
+            ))
+        })
+    }
+
+    fn commit(mut self) -> Result<()> {
+        if let Some(permissions) = self.permissions {
+            self.temporary
+                .as_file_mut()
+                .set_permissions(permissions)
+                .map_err(RsomicsError::Io)?;
+        }
+        self.temporary
+            .as_file_mut()
+            .sync_all()
+            .map_err(RsomicsError::Io)?;
+        self.temporary.persist(self.target).map_err(|error| {
+            RsomicsError::Io(io::Error::new(
+                error.error.kind(),
+                format!(
+                    "committing output {}: {}",
+                    self.target.display(),
+                    error.error
+                ),
+            ))
+        })?;
+        Ok(())
+    }
 }
 
 fn parse_flags(value: &str) -> std::result::Result<u16, String> {

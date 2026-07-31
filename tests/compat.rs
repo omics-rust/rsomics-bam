@@ -310,6 +310,67 @@ fn view_count_uses_the_shared_json_envelope() {
 }
 
 #[test]
+fn view_saves_filter_counts_transactionally() {
+    let directory = tempfile::tempdir().unwrap();
+    let counts = directory.path().join("counts.json");
+    let input = golden("records.sam");
+    let output = run_ours(&[
+        "view",
+        "-c",
+        "-f",
+        "paired",
+        "--save-counts",
+        counts.to_str().unwrap(),
+        input.to_str().unwrap(),
+    ]);
+    assert_eq!(output.stdout, b"2\n");
+
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&counts).unwrap()).unwrap();
+    assert_eq!(value["records_processed"], 3);
+    assert_eq!(value["records_filter_accepted"], 2);
+    assert_eq!(value["records_filter_rejected"], 1);
+
+    fs::write(&counts, b"existing\n").unwrap();
+    let invalid = directory.path().join("invalid.sam");
+    fs::write(
+        &invalid,
+        b"@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:40\nbroken\t0\tchr1\n",
+    )
+    .unwrap();
+    let failed = binary()
+        .args(["view", "--save-counts"])
+        .arg(&counts)
+        .arg(&invalid)
+        .output()
+        .unwrap();
+    assert!(!failed.status.success());
+    assert_eq!(fs::read(&counts).unwrap(), b"existing\n");
+}
+
+#[test]
+fn view_rejects_ambiguous_count_outputs() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = directory.path().join("output.sam");
+    let input = golden("records.sam");
+
+    for arguments in [
+        vec![
+            "view",
+            "-o",
+            output.to_str().unwrap(),
+            "--save-counts",
+            output.to_str().unwrap(),
+            input.to_str().unwrap(),
+        ],
+        vec!["view", "--save-counts", "-", input.to_str().unwrap()],
+    ] {
+        let result = binary().args(arguments).output().unwrap();
+        assert!(!result.status.success());
+    }
+    assert!(!output.exists());
+}
+
+#[test]
 fn view_rejects_json_stream_mixing() {
     let input = golden("records.sam");
     let output = binary()
@@ -954,6 +1015,53 @@ fn view_matches_samtools_1_24_for_streaming_filters() {
                 input.display()
             );
         }
+    }
+}
+
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn view_saved_counts_match_samtools_1_24() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let inputs = build_alignment_set(directory.path());
+
+    for (position, input) in [&inputs.sam, &inputs.bam, &inputs.cram]
+        .into_iter()
+        .enumerate()
+    {
+        let ours_counts = directory.path().join(format!("ours-{position}.json"));
+        let oracle_counts = directory.path().join(format!("oracle-{position}.json"));
+        let mut ours = vec![
+            "view",
+            "--no-PG",
+            "-c",
+            "-f",
+            "paired",
+            "--save-counts",
+            ours_counts.to_str().unwrap(),
+        ];
+        let mut oracle = vec![
+            "view",
+            "--no-PG",
+            "-c",
+            "-f",
+            "paired",
+            "--save-counts",
+            oracle_counts.to_str().unwrap(),
+        ];
+        if input == &inputs.cram {
+            ours.extend(["-T", inputs.reference.to_str().unwrap()]);
+            oracle.extend(["-T", inputs.reference.to_str().unwrap()]);
+        }
+        ours.push(input.to_str().unwrap());
+        oracle.push(input.to_str().unwrap());
+
+        assert_eq!(run_ours(&ours).stdout, run_samtools(&oracle).stdout);
+        let ours: serde_json::Value =
+            serde_json::from_slice(&fs::read(ours_counts).unwrap()).unwrap();
+        let oracle: serde_json::Value =
+            serde_json::from_slice(&fs::read(oracle_counts).unwrap()).unwrap();
+        assert_eq!(ours, oracle, "{}", input.display());
     }
 }
 
