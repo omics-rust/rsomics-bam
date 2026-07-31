@@ -16,6 +16,11 @@ enum Format {
     Bam,
 }
 
+struct TagOptions {
+    remove: Option<Vec<[u8; 2]>>,
+    keep: Option<Vec<[u8; 2]>>,
+}
+
 #[derive(Debug, Args)]
 #[command(disable_help_flag = true)]
 pub(crate) struct Arguments {
@@ -120,6 +125,14 @@ pub(crate) struct Arguments {
     #[arg(long, value_name = "FLAG", value_parser = parse_flags)]
     remove_flags: Vec<u16>,
 
+    /// Remove comma-separated auxiliary tags from selected records
+    #[arg(short = 'x', long = "remove-tag", value_name = "TAG[,TAG...]")]
+    remove_tags: Vec<String>,
+
+    /// Keep only comma-separated auxiliary tags on selected records
+    #[arg(long = "keep-tag", value_name = "TAG[,TAG...]")]
+    keep_tags: Vec<String>,
+
     /// Reference FASTA for CRAM decoding
     #[arg(short = 'T', long, value_name = "FASTA")]
     reference: Option<PathBuf>,
@@ -152,6 +165,7 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
             view::Program::new("rsomics-bam", env!("CARGO_PKG_VERSION"), command_line)
         })
         .transpose()?;
+    let tags = parse_tag_options(&arguments.remove_tags, &arguments.keep_tags)?;
     let options = view::Options {
         with_header: arguments.with_header,
         header_only: arguments.header_only,
@@ -167,6 +181,8 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
         minimum_query_length: arguments.minimum_query_length,
         add_flags: combine_flags(&arguments.add_flags),
         remove_flags: combine_flags(&arguments.remove_flags),
+        remove_tags: tags.remove.as_deref(),
+        keep_tags: tags.keep.as_deref(),
         output_format: output_format(&arguments)?,
         compression: compression(&arguments),
         reference: arguments.reference.as_deref(),
@@ -387,6 +403,53 @@ fn combine_flags(flags: &[u16]) -> u16 {
         .iter()
         .copied()
         .fold(0, |combined, flag| combined | flag)
+}
+
+fn parse_tag_lists(values: &[String]) -> Result<Option<Vec<[u8; 2]>>> {
+    if values.is_empty() {
+        return Ok(None);
+    }
+
+    let mut tags = Vec::new();
+    for value in values {
+        if value.is_empty() {
+            continue;
+        }
+        for tag in value.split(',') {
+            let bytes: [u8; 2] = tag.as_bytes().try_into().map_err(|_| {
+                RsomicsError::ConfigError(
+                    "auxiliary tags must be exactly two bytes long".to_owned(),
+                )
+            })?;
+            if !tags.contains(&bytes) {
+                tags.push(bytes);
+            }
+        }
+    }
+    Ok(Some(tags))
+}
+
+fn parse_tag_options(remove_values: &[String], keep_values: &[String]) -> Result<TagOptions> {
+    let mut remove = Vec::new();
+    let mut keep = keep_values.to_vec();
+
+    for value in remove_values {
+        if let Some(value) = value.strip_prefix('^') {
+            keep.push(value.to_owned());
+        } else {
+            remove.push(value.clone());
+        }
+    }
+    if !remove.is_empty() && !keep.is_empty() {
+        return Err(RsomicsError::ConfigError(
+            "--remove-tag and --keep-tag are mutually exclusive".to_owned(),
+        ));
+    }
+
+    Ok(TagOptions {
+        remove: parse_tag_lists(&remove)?,
+        keep: parse_tag_lists(&keep)?,
+    })
 }
 
 fn output_format(arguments: &Arguments) -> Result<view::Format> {

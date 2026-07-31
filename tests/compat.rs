@@ -774,6 +774,73 @@ fn view_writes_finished_bam_by_flag_and_extension() {
 }
 
 #[test]
+fn view_keeps_or_removes_selected_auxiliary_tags() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("tags.sam");
+    fs::write(
+        &input,
+        b"@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:40\n@RG\tID:rg1\n\
+          r1\t0\tchr1\t1\t60\t1M\t*\t0\t0\tA\tI\tRG:Z:rg1\tNM:i:1\tAS:i:8\tXX:Z:x\n",
+    )
+    .unwrap();
+
+    let removed = run_ours(&[
+        "view",
+        "--no-PG",
+        "-x",
+        "NM",
+        "--remove-tag",
+        "AS",
+        input.to_str().unwrap(),
+    ]);
+    let removed = String::from_utf8(removed.stdout).unwrap();
+    assert!(removed.contains("\tRG:Z:rg1\tXX:Z:x\n"), "{removed}");
+    assert!(!removed.contains("\tNM:"), "{removed}");
+    assert!(!removed.contains("\tAS:"), "{removed}");
+
+    for arguments in [
+        vec!["--keep-tag", "RG,XX"],
+        vec!["-x", "^RG,XX"],
+        vec!["--keep-tag", "RG", "--keep-tag", "XX"],
+    ] {
+        let mut command = vec!["view", "--no-PG"];
+        command.extend(arguments);
+        command.push(input.to_str().unwrap());
+        assert_eq!(run_ours(&command).stdout, removed.as_bytes());
+    }
+
+    assert_eq!(
+        run_ours(&["view", "-c", "--keep-tag", "", input.to_str().unwrap(),]).stdout,
+        b"1\n"
+    );
+
+    for arguments in [
+        vec!["view", "-x", "NM", "--keep-tag", "RG"],
+        vec!["view", "-x", "NM", "-x", "^RG"],
+        vec!["view", "-x", "N"],
+    ] {
+        let failed = binary().args(arguments).arg(&input).output().unwrap();
+        assert!(!failed.status.success());
+    }
+
+    let bam = directory.path().join("tags.bam");
+    run_ours(&[
+        "view",
+        "--no-PG",
+        "-b",
+        "--keep-tag",
+        "RG,XX",
+        "-o",
+        bam.to_str().unwrap(),
+        input.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        run_ours(&["view", "--no-PG", bam.to_str().unwrap()]).stdout,
+        removed.as_bytes()
+    );
+}
+
+#[test]
 fn view_controls_bam_compression() {
     let directory = tempfile::tempdir().unwrap();
     let input = golden("records.sam");
@@ -1644,6 +1711,77 @@ fn view_flag_changes_match_samtools_1_24() {
         oracle.retain(|argument| *argument != "-h");
         ours.splice(2..2, ["-b", "-o", ours_bam.to_str().unwrap()].into_iter());
         oracle.splice(2..2, ["-b", "-o", oracle_bam.to_str().unwrap()].into_iter());
+        run_ours(&ours);
+        run_samtools(&oracle);
+        assert_eq!(
+            run_samtools(&["view", "--no-PG", "-h", ours_bam.to_str().unwrap()]).stdout,
+            run_samtools(&["view", "--no-PG", "-h", oracle_bam.to_str().unwrap()]).stdout,
+            "{} BAM output",
+            input.display()
+        );
+    }
+}
+
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn view_auxiliary_tag_changes_match_samtools_1_24() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let inputs = build_alignment_set(directory.path());
+
+    for (position, input) in [&inputs.sam, &inputs.bam, &inputs.cram]
+        .into_iter()
+        .enumerate()
+    {
+        for options in [
+            &["-x", "RG"][..],
+            &["--keep-tag", "RG"][..],
+            &["-x", "^RG"][..],
+        ] {
+            let mut ours = vec!["view", "--no-PG", "-h"];
+            let mut oracle = ours.clone();
+            ours.extend(options);
+            oracle.extend(options);
+            if input == &inputs.cram {
+                ours.extend(["-T", inputs.reference.to_str().unwrap()]);
+                oracle.extend(["-T", inputs.reference.to_str().unwrap()]);
+            }
+            ours.push(input.to_str().unwrap());
+            oracle.push(input.to_str().unwrap());
+            assert_eq!(
+                run_ours(&ours).stdout,
+                run_samtools(&oracle).stdout,
+                "{} options={options:?}",
+                input.display()
+            );
+        }
+
+        let ours_bam = directory.path().join(format!("ours-tags-{position}.bam"));
+        let oracle_bam = directory.path().join(format!("oracle-tags-{position}.bam"));
+        let mut ours = vec![
+            "view",
+            "--no-PG",
+            "-b",
+            "-x",
+            "RG",
+            "-o",
+            ours_bam.to_str().unwrap(),
+        ];
+        let mut oracle = vec![
+            "view",
+            "--no-PG",
+            "-b",
+            "-x",
+            "RG",
+            "-o",
+            oracle_bam.to_str().unwrap(),
+        ];
+        if input == &inputs.cram {
+            ours.extend(["-T", inputs.reference.to_str().unwrap()]);
+            oracle.extend(["-T", inputs.reference.to_str().unwrap()]);
+        }
+        ours.push(input.to_str().unwrap());
+        oracle.push(input.to_str().unwrap());
         run_ours(&ours);
         run_samtools(&oracle);
         assert_eq!(

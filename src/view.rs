@@ -98,6 +98,8 @@ pub struct Options<'a> {
     pub minimum_query_length: u64,
     pub add_flags: u16,
     pub remove_flags: u16,
+    pub remove_tags: Option<&'a [[u8; 2]]>,
+    pub keep_tags: Option<&'a [[u8; 2]]>,
     pub output_format: Format,
     pub compression: Compression,
     pub reference: Option<&'a Path>,
@@ -116,6 +118,11 @@ pub fn write<W>(input_path: &Path, options: Options<'_>, output: W) -> Result<Su
 where
     W: Write + Send + 'static,
 {
+    if options.remove_tags.is_some() && options.keep_tags.is_some() {
+        return Err(RsomicsError::ConfigError(
+            "--remove-tag and --keep-tag are mutually exclusive".to_owned(),
+        ));
+    }
     let parallel_output = !options.count_only
         && options.output_format == Format::Bam
         && options.additional_threads > 0;
@@ -228,6 +235,8 @@ where
                 && options.regions.is_empty()
                 && options.add_flags == 0
                 && options.remove_flags == 0
+                && options.remove_tags.is_none()
+                && options.keep_tags.is_none()
             {
                 reader.visit_raw_bam_records(input_path, |record| {
                     if filter.accepts_raw(&record)? {
@@ -249,15 +258,15 @@ where
                             selected = selected.checked_add(1).ok_or_else(count_overflow)?;
                             if format == input::Format::Cram {
                                 let mut record = md::complete(&header, record, reference.as_mut())?;
-                                change_flags(&mut record, options.add_flags, options.remove_flags);
+                                transform_record(&mut record, options);
                                 writer.write_record(&output_header, &record)?;
-                            } else if options.add_flags != 0 || options.remove_flags != 0 {
+                            } else if has_record_transform(options) {
                                 let mut record =
                                     sam::alignment::RecordBuf::try_from_alignment_record(
                                         &header, record,
                                     )
                                     .map_err(RsomicsError::Io)?;
-                                change_flags(&mut record, options.add_flags, options.remove_flags);
+                                transform_record(&mut record, options);
                                 writer.write_record(&output_header, &record)?;
                             } else {
                                 writer.write_record(&output_header, record)?;
@@ -276,9 +285,37 @@ where
     Ok(Summary { selected, rejected })
 }
 
-fn change_flags(record: &mut sam::alignment::RecordBuf, add: u16, remove: u16) {
-    let flags = (u16::from(record.flags()) | add) & !remove;
+fn has_record_transform(options: Options<'_>) -> bool {
+    options.add_flags != 0
+        || options.remove_flags != 0
+        || options.remove_tags.is_some()
+        || options.keep_tags.is_some()
+}
+
+fn transform_record(record: &mut sam::alignment::RecordBuf, options: Options<'_>) {
+    let flags = (u16::from(record.flags()) | options.add_flags) & !options.remove_flags;
     *record.flags_mut() = sam::alignment::record::Flags::from_bits_retain(flags);
+
+    let tags = match (options.keep_tags, options.remove_tags) {
+        (Some(tags), None) => Some((tags, true)),
+        (None, Some(tags)) => Some((tags, false)),
+        _ => None,
+    };
+    let Some((tags, keep)) = tags else {
+        return;
+    };
+
+    let data = record.data_mut();
+    let removed = data
+        .keys()
+        .filter(|tag| {
+            let present = tags.contains(tag.as_ref());
+            present != keep
+        })
+        .collect::<Vec<_>>();
+    for tag in removed {
+        data.remove(&tag);
+    }
 }
 
 fn add_program(header: &mut sam::Header, program: Program<'_>) -> Result<()> {

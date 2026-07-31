@@ -39,7 +39,7 @@ enum Command {
     /// List samples declared by alignment read groups
     Samples(commands::samples::Arguments),
     /// Filter and convert alignment records
-    View(commands::view::Arguments),
+    View(Box<commands::view::Arguments>),
 }
 
 #[derive(Debug, Serialize)]
@@ -67,7 +67,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Head(arguments) => commands::head::execute(arguments, cli.output.json),
         Command::Quickcheck(arguments) => commands::quickcheck::execute(arguments, cli.output.json),
         Command::Samples(arguments) => commands::samples::execute(arguments, cli.output.json),
-        Command::View(arguments) => commands::view::execute(arguments, cli.output.json),
+        Command::View(arguments) => commands::view::execute(*arguments, cli.output.json),
     }
 }
 
