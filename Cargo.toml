@@ -1,0 +1,34 @@
+[package]
+name = "rsomics-bam"
+version = "0.3.0"
+description = "Coherent SAM, BAM, and CRAM inspection and transformation workflows"
+edition = "2024"
+rust-version = "1.91"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/omics-rust/rsomics-bam"
+homepage = "https://github.com/omics-rust/rsomics-bam"
+documentation = "https://docs.rs/rsomics-bam"
+readme = "README.md"
+authors = ["Zane Leong <efd@live.com>"]
+categories = ["science", "command-line-utilities"]
+keywords = ["bam", "cram", "sam", "samtools", "bioinformatics"]
+
+[lib]
+name = "rsomics_bam"
+path = "src/lib.rs"
+doctest = false
+
+[[bin]]
+name = "rsomics-bam"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+rsomics-common = "0.7"
+rsomics-help = "0.4"
+rust-htslib = "1.0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
