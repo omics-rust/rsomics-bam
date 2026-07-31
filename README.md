@@ -7,6 +7,7 @@ The current development slice contains:
 - `rsomics-bam flags`
 - `rsomics-bam flagstat`
 - `rsomics-bam head`
+- `rsomics-bam mpileup`
 - `rsomics-bam quickcheck`
 - `rsomics-bam samples`
 - `rsomics-bam view`

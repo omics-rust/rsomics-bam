@@ -3,6 +3,7 @@
 pub mod flags;
 pub mod flagstat;
 pub mod head;
+pub mod mpileup;
 pub mod quickcheck;
 pub mod samples;
 pub mod view;

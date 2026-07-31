@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 use rsomics_common::{OutputArgs, Result, ToolMeta, run as run_tool};
 use serde::Serialize;
 
-use crate::{commands, flags, flagstat, head, quickcheck, samples, view};
+use crate::{commands, flags, flagstat, head, mpileup, quickcheck, samples, view};
 
 const META: ToolMeta = ToolMeta {
     name: "rsomics-bam",
@@ -34,6 +34,8 @@ enum Command {
     Flagstat(commands::flagstat::Arguments),
     /// Print header lines and the first alignments as SAM
     Head(commands::head::Arguments),
+    /// Generate per-position text pileup
+    Mpileup(commands::mpileup::Arguments),
     /// Check alignment headers and format-specific end markers
     Quickcheck(commands::quickcheck::Arguments),
     /// List samples declared by alignment read groups
@@ -48,6 +50,7 @@ pub(crate) enum CommandOutput {
     Flags { values: Vec<flags::FlagValue> },
     Flagstat { counts: Box<flagstat::Counts> },
     Head { summary: head::Summary },
+    Mpileup { summary: mpileup::Summary },
     Quickcheck { report: quickcheck::Report },
     Samples { report: samples::Report },
     View { summary: view::Summary },
@@ -65,6 +68,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Flags(arguments) => commands::flags::execute(arguments, cli.output.json),
         Command::Flagstat(arguments) => commands::flagstat::execute(arguments, cli.output.json),
         Command::Head(arguments) => commands::head::execute(arguments, cli.output.json),
+        Command::Mpileup(arguments) => commands::mpileup::execute(arguments, cli.output.json),
         Command::Quickcheck(arguments) => commands::quickcheck::execute(arguments, cli.output.json),
         Command::Samples(arguments) => commands::samples::execute(arguments, cli.output.json),
         Command::View(arguments) => commands::view::execute(*arguments, cli.output.json),

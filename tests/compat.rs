@@ -74,6 +74,79 @@ fn assert_samtools_1_24() {
     assert!(version.starts_with("samtools 1.24\n"), "{version}");
 }
 
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn mpileup_matches_samtools_1_24_for_sam_bam_and_cram() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let inputs = build_alignment_set(directory.path());
+
+    for input in [&inputs.sam, &inputs.bam] {
+        for options in [
+            Vec::new(),
+            vec!["-Q", "20"],
+            vec!["-A"],
+            vec!["-x"],
+            vec!["-a"],
+            vec!["-aa"],
+        ] {
+            let mut ours = vec!["mpileup"];
+            ours.extend(options.iter().copied());
+            ours.push(input.to_str().unwrap());
+            let mut oracle = vec!["mpileup"];
+            oracle.extend(options.iter().copied());
+            oracle.push(input.to_str().unwrap());
+            assert_eq!(
+                run_ours(&ours).stdout,
+                run_samtools(&oracle).stdout,
+                "{} {options:?}",
+                input.display()
+            );
+        }
+    }
+
+    for input in [&inputs.sam, &inputs.bam, &inputs.cram] {
+        for options in [Vec::new(), vec!["-B"], vec!["-E"]] {
+            let reference = inputs.reference.to_str().unwrap();
+            let mut ours = vec!["mpileup", "-f", reference];
+            ours.extend(options.iter().copied());
+            ours.push(input.to_str().unwrap());
+            let mut oracle = vec!["mpileup", "-f", reference];
+            oracle.extend(options.iter().copied());
+            oracle.push(input.to_str().unwrap());
+            assert_eq!(
+                run_ours(&ours).stdout,
+                run_samtools(&oracle).stdout,
+                "{} {options:?}",
+                input.display()
+            );
+        }
+    }
+
+    let indels = golden("mpileup-records.sam");
+    let reference = golden("mpileup-reference.fa");
+    for options in [
+        Vec::new(),
+        vec!["-Q", "0"],
+        vec!["-x"],
+        vec!["-f", reference.to_str().unwrap()],
+        vec!["-f", reference.to_str().unwrap(), "-B"],
+        vec!["-f", reference.to_str().unwrap(), "-E"],
+    ] {
+        let mut ours = vec!["mpileup"];
+        ours.extend(options.iter().copied());
+        ours.push(indels.to_str().unwrap());
+        let mut oracle = vec!["mpileup"];
+        oracle.extend(options.iter().copied());
+        oracle.push(indels.to_str().unwrap());
+        assert_eq!(
+            run_ours(&ours).stdout,
+            run_samtools(&oracle).stdout,
+            "indels {options:?}"
+        );
+    }
+}
+
 struct AlignmentSet {
     sam: PathBuf,
     bam: PathBuf,
@@ -196,6 +269,27 @@ fn machine_output_uses_the_shared_envelope() {
     assert_eq!(
         value["result"]["counts"]["total"],
         serde_json::json!([3, 0])
+    );
+}
+
+#[test]
+fn mpileup_named_output_uses_the_shared_json_envelope() {
+    let directory = tempfile::tempdir().unwrap();
+    let output_path = directory.path().join("pileup.txt");
+    let output = run_ours(&[
+        "--json",
+        "mpileup",
+        "-o",
+        output_path.to_str().unwrap(),
+        golden("records.sam").to_str().unwrap(),
+    ]);
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["result"]["command"], "mpileup");
+    assert_eq!(value["result"]["summary"]["positions"], 16);
+    assert_eq!(
+        fs::read(output_path).unwrap(),
+        fs::read(golden("mpileup-default.txt")).unwrap()
     );
 }
 

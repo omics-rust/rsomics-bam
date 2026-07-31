@@ -1,0 +1,16 @@
+chr1	1	N	1	^]A	I
+chr1	2	N	1	C	I
+chr1	3	N	1	G	I
+chr1	4	N	1	T	I
+chr1	5	N	1	A	I
+chr1	6	N	1	C	I
+chr1	7	N	1	G	I
+chr1	8	N	1	T$	I
+chr1	17	N	1	^]a	I
+chr1	18	N	1	c	I
+chr1	19	N	1	g	I
+chr1	20	N	1	t	I
+chr1	21	N	1	a	I
+chr1	22	N	1	c	I
+chr1	23	N	1	g	I
+chr1	24	N	1	t$	I
