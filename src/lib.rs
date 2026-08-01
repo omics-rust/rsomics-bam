@@ -1,11 +1,20 @@
 #![deny(unsafe_code)]
 
+//! Programmatic interfaces for the rsomics SAM, BAM, and CRAM product.
+
+/// SAM flag parsing and rendering.
 pub mod flags;
+/// Alignment flag statistics.
 pub mod flagstat;
+/// Header and leading-record inspection.
 pub mod head;
+/// Per-position pileup generation.
 pub mod mpileup;
+/// Alignment integrity checks.
 pub mod quickcheck;
+/// Read-group sample metadata.
 pub mod samples;
+/// Alignment filtering and format conversion.
 pub mod view;
 
 mod cli;
