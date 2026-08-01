@@ -250,8 +250,11 @@ fn encode_column(
     buffers.line.clear();
     buffers.bases.clear();
     buffers.qualities.clear();
-    let reference_id = usize::try_from(column.reference_id()).unwrap();
-    let name = names.get(reference_id).copied().unwrap_or(b"*");
+    let reference_id = reference_index(column.reference_id())?;
+    let name = names
+        .get(reference_id)
+        .copied()
+        .ok_or_else(|| invalid_reference_id(column.reference_id()))?;
     let reference_base = reference_base(reference, column.reference_id(), column.position())?;
     buffers.line.extend_from_slice(name);
     buffers.line.push(b'\t');
@@ -338,8 +341,13 @@ fn encode_base(
         output.push(b'+');
         push_i64(output, read.indel);
         let deletion_offset = usize::from(read.is_deletion);
-        for offset in 1..=usize::try_from(read.indel).unwrap() {
-            let query_position = read.qpos + offset - deletion_offset;
+        let length = usize::try_from(read.indel).map_err(|_| invalid_indel(read.indel))?;
+        for offset in 1..=length {
+            let query_position = read
+                .qpos
+                .checked_add(offset)
+                .and_then(|position| position.checked_sub(deletion_offset))
+                .ok_or_else(|| invalid_indel(read.indel))?;
             let base = if query_position < record.sequence_len() {
                 INSERTION_BASES[usize::from(record.seq_nibble(query_position))]
             } else {
@@ -355,9 +363,12 @@ fn encode_base(
         output.push(b'-');
         let length = read.indel.unsigned_abs();
         push_u64(output, length);
+        let length = i64::try_from(length).map_err(|_| invalid_indel(read.indel))?;
         for offset in 1..=length {
-            let offset = i64::try_from(offset).unwrap();
-            let base = reference_base(reference, reference_id, position + offset)?;
+            let position = position
+                .checked_add(offset)
+                .ok_or_else(|| invalid_indel(read.indel))?;
+            let base = reference_base(reference, reference_id, position)?;
             output.push(if reverse {
                 base.to_ascii_lowercase()
             } else {
@@ -396,9 +407,9 @@ fn emit_gaps(
     while reference_id > *last_reference_id {
         if *last_reference_id >= 0 {
             let length = lengths
-                .get(usize::try_from(*last_reference_id).unwrap())
+                .get(reference_index(*last_reference_id)?)
                 .copied()
-                .unwrap_or(0);
+                .ok_or_else(|| invalid_reference_id(*last_reference_id))?;
             while *last_position + 1 < length {
                 *last_position += 1;
                 emit_empty(
@@ -458,9 +469,9 @@ fn emit_trailing(
     let reference_count = i32::try_from(names.len()).unwrap_or(i32::MAX);
     while *last_reference_id >= 0 && *last_reference_id < reference_count {
         let length = lengths
-            .get(usize::try_from(*last_reference_id).unwrap())
+            .get(reference_index(*last_reference_id)?)
             .copied()
-            .unwrap_or(0);
+            .ok_or_else(|| invalid_reference_id(*last_reference_id))?;
         while *last_position + 1 < length {
             *last_position += 1;
             emit_empty(
@@ -493,9 +504,9 @@ fn emit_empty(
 ) -> Result<()> {
     line.clear();
     let name = names
-        .get(usize::try_from(reference_id).unwrap())
+        .get(reference_index(reference_id)?)
         .copied()
-        .unwrap_or(b"*");
+        .ok_or_else(|| invalid_reference_id(reference_id))?;
     line.extend_from_slice(name);
     line.push(b'\t');
     push_i64(line, position + 1);
@@ -523,6 +534,18 @@ fn reference_base(
         .checked_add(1)
         .ok_or_else(|| reference.error("reference position overflows"))?;
     Ok(reference.sequence(reference_id, position..end)?[0])
+}
+
+fn reference_index(reference_id: i32) -> Result<usize> {
+    usize::try_from(reference_id).map_err(|_| invalid_reference_id(reference_id))
+}
+
+fn invalid_reference_id(reference_id: i32) -> RsomicsError {
+    RsomicsError::InvalidInput(format!("pileup reference ID is invalid: {reference_id}"))
+}
+
+fn invalid_indel(indel: i64) -> RsomicsError {
+    RsomicsError::InvalidInput(format!("pileup indel length is unsupported: {indel}"))
 }
 
 fn reference_code(base: u8) -> u8 {

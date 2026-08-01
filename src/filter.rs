@@ -120,7 +120,10 @@ fn with_raw_read_group(
             "alignment RG tag must be a string".to_owned(),
         ));
     }
-    Ok(accept(Some(value.strip_suffix(&[0]).unwrap())))
+    let value = value.strip_suffix(&[0]).ok_or_else(|| {
+        RsomicsError::InvalidInput("alignment RG tag is not NUL-terminated".to_owned())
+    })?;
+    Ok(accept(Some(value)))
 }
 
 #[derive(Debug, Eq, PartialEq)]
