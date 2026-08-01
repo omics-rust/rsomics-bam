@@ -1,6 +1,6 @@
 [package]
 name = "rsomics-bam"
-version = "0.3.0"
+version = "0.4.0"
 description = "Coherent SAM, BAM, and CRAM inspection and transformation workflows"
 edition = "2024"
 rust-version = "1.91"
@@ -28,10 +28,10 @@ itoa = "1"
 noodles = { version = "0.110", features = ["bam", "bgzf", "core", "cram", "csi", "fasta", "sam"] }
 noodles-bgzf = { version = "0.47", features = ["libdeflate"] }
 noodles-util = { version = "0.79", features = ["alignment"] }
-rsomics-common = "0.7"
-rsomics-bamio = "0.3"
+rsomics-common = "0.10"
+rsomics-bamio = "0.4"
 rsomics-help = "0.4"
-rsomics-pileup = "0.3"
+rsomics-pileup = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
