@@ -625,9 +625,9 @@ dependencies = [
 
 [[package]]
 name = "rsomics-bamio"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7dbfdde57d3f0553f962ab1836ff06ce59540637b6a501757690cdf66c85876b"
+checksum = "1ff830a8263e4a5c8784101c3d6674e4bd86ec8ced446327d94d35731db13600"
 dependencies = [
  "crossbeam-channel",
  "libdeflater",
