@@ -28,10 +28,10 @@ itoa = "1"
 noodles = { version = "0.110", features = ["bam", "bgzf", "core", "cram", "csi", "fasta", "sam"] }
 noodles-bgzf = { version = "0.47", features = ["libdeflate"] }
 noodles-util = { version = "0.79", features = ["alignment"] }
-rsomics-common = "0.10"
-rsomics-bamio = "0.4"
+rsomics-common = "0.12"
+rsomics-bamio = "0.8"
 rsomics-help = "0.4"
-rsomics-pileup = "0.4"
+rsomics-pileup = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"

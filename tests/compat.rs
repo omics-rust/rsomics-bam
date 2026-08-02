@@ -1750,8 +1750,8 @@ fn view_library_filter_matches_samtools_1_24() {
             .join(format!("oracle-library-{position}.bam"));
         ours.retain(|argument| *argument != "-c");
         oracle.retain(|argument| *argument != "-c");
-        ours.splice(2..2, ["-b", "-o", ours_bam.to_str().unwrap()].into_iter());
-        oracle.splice(2..2, ["-b", "-o", oracle_bam.to_str().unwrap()].into_iter());
+        ours.splice(2..2, ["-b", "-o", ours_bam.to_str().unwrap()]);
+        oracle.splice(2..2, ["-b", "-o", oracle_bam.to_str().unwrap()]);
         run_ours(&ours);
         run_samtools(&oracle);
         assert_eq!(
@@ -1803,8 +1803,8 @@ fn view_flag_changes_match_samtools_1_24() {
             .join(format!("oracle-flags-{position}.bam"));
         ours.retain(|argument| *argument != "-h");
         oracle.retain(|argument| *argument != "-h");
-        ours.splice(2..2, ["-b", "-o", ours_bam.to_str().unwrap()].into_iter());
-        oracle.splice(2..2, ["-b", "-o", oracle_bam.to_str().unwrap()].into_iter());
+        ours.splice(2..2, ["-b", "-o", ours_bam.to_str().unwrap()]);
+        oracle.splice(2..2, ["-b", "-o", oracle_bam.to_str().unwrap()]);
         run_ours(&ours);
         run_samtools(&oracle);
         assert_eq!(
