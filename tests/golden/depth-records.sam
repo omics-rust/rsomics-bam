@@ -1,0 +1,10 @@
+@HD	VN:1.6	SO:coordinate
+@SQ	SN:chr1	LN:24
+@SQ	SN:chr2	LN:6
+r1	0	chr1	2	60	2M2D2M	*	0	0	ACGT	IJKL
+r2	0	chr1	3	20	2M2N2M	*	0	0	TGCA	!III
+pair	99	chr1	8	60	5M	=	10	7	AAAAA	IIIII
+pair	147	chr1	10	60	5M	=	8	-7	AAAAA	IIIII
+short	0	chr1	15	60	2S2M	*	0	0	CCCC	IIII
+duplicate	1024	chr1	18	60	3M	*	0	0	GGG	III
+secondary	256	chr1	20	60	3M	*	0	0	TTT	III

@@ -1,0 +1,4 @@
+@HD	VN:1.6	SO:unknown
+@SQ	SN:chr1	LN:20
+later	0	chr1	10	60	3M	*	0	0	AAA	III
+earlier	0	chr1	2	60	3M	*	0	0	CCC	III

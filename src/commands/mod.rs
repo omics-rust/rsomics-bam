@@ -1,3 +1,4 @@
+pub(crate) mod depth;
 pub(crate) mod flags;
 pub(crate) mod flagstat;
 pub(crate) mod head;

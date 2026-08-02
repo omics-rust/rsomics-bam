@@ -2,6 +2,8 @@
 
 //! Programmatic interfaces for the rsomics SAM, BAM, and CRAM product.
 
+/// Per-position alignment depth.
+pub mod depth;
 /// SAM flag parsing and rendering.
 pub mod flags;
 /// Alignment flag statistics.

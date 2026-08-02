@@ -13,6 +13,7 @@ cargo install rsomics-bam
 
 | Command | Purpose |
 |---|---|
+| `depth` | Compute one per-input depth column at each position |
 | `flags` | Convert numeric and symbolic SAM flags |
 | `flagstat` | Count records by SAM flag category |
 | `head` | Print alignment headers and leading records as SAM |
@@ -24,6 +25,7 @@ cargo install rsomics-bam
 ```sh
 rsomics-bam view -b -@ 4 -q 20 -o selected.bam input.bam
 rsomics-bam view -c -F UNMAP,SECONDARY input.cram -T reference.fa
+rsomics-bam depth -a -b targets.bed sample.bam
 rsomics-bam mpileup -f reference.fa -Q 20 input.bam
 ```
 
