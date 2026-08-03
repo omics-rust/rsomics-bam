@@ -88,6 +88,37 @@ fn shorter_record_does_not_truncate_active_depth() {
     assert!(output.ends_with(b"chr1\t11\t1\n"));
 }
 
+#[test]
+fn depth_uses_the_shared_long_cigar_contract() {
+    let directory = tempfile::tempdir().unwrap();
+    let sam = directory.path().join("long.sam");
+    let bam = directory.path().join("long.bam");
+    let operation_count = 65_536;
+    fs::write(
+        &sam,
+        format!(
+            "@HD\tVN:1.6\tSO:coordinate\n@SQ\tSN:chr1\tLN:70000\nlong\t0\tchr1\t1\t60\t{}\t*\t0\t0\t{}\t{}\n",
+            "1M".repeat(operation_count),
+            "A".repeat(operation_count),
+            "I".repeat(operation_count)
+        ),
+    )
+    .unwrap();
+    run({
+        let mut command = binary();
+        command.args(["view", "-b", "-o"]).arg(&bam).arg(&sam);
+        command
+    });
+
+    let mut output = Vec::new();
+    depth::write(&[bam], Options::default(), &mut output).unwrap();
+    assert_eq!(
+        output.iter().filter(|&&byte| byte == b'\n').count(),
+        operation_count
+    );
+    assert!(output.ends_with(b"chr1\t65536\t1\n"));
+}
+
 fn binary() -> Command {
     Command::new(env!("CARGO_BIN_EXE_rsomics-bam"))
 }

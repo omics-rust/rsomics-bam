@@ -536,22 +536,7 @@ macro_rules! impl_depth_record {
             }
 
             fn copy_cigar(&self, buffer: &mut Vec<(u8, u32)>) -> Result<()> {
-                buffer.clear();
-                buffer.extend(self.cigar_ops());
-                if buffer.len() == 2
-                    && buffer[0] == (SOFT_CLIP, u32::try_from(self.sequence_len()).unwrap())
-                    && buffer[1].0 == REFERENCE_SKIP
-                    && self.aux_type(*b"CG") == Some(b'B')
-                {
-                    *buffer = self.decoded_cigar()?;
-                }
-                if buffer.iter().any(|&(kind, length)| kind > 8 || length == 0) {
-                    return Err(RsomicsError::InvalidInput(format!(
-                        "read {}: invalid CIGAR operation",
-                        String::from_utf8_lossy(self.name())
-                    )));
-                }
-                Ok(())
+                self.decode_cigar_into(buffer)
             }
 
             fn sequence_len(&self) -> usize {
