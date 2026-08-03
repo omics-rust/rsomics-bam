@@ -97,7 +97,7 @@ multiple inputs, SAM, or CRAM.
 ## Index benchmark
 
 The 2026-08-03 index gate used revision
-`ff1f0ea7829a3200adea3622dc7c1cd2d91e83e0` and samtools/HTSlib 1.24 on an
+`dce21e7341cfc0a39ac66f9d82a027bda2c4cbc2` and samtools/HTSlib 1.24 on an
 Apple M2 Mac mini with 8 GiB of memory. Twenty timed pairs alternated command
 order after one warm-up. `rsomics-bam index` selected its default four
 additional workers; samtools used its default one-thread indexing path.
@@ -109,14 +109,14 @@ samtools index -o samtools.bai input.bam
 
 | Tool | Mean wall time | Mean user time | Mean system time | Mean peak RSS |
 |---|---:|---:|---:|---:|
-| `rsomics-bam index` | 0.4460 s | 0.5605 s | 0.1700 s | 5,900,698 bytes |
-| `samtools index` | 0.8290 s | 0.4465 s | 0.0610 s | 6,911,590 bytes |
+| `rsomics-bam index` | 0.4280 s | 0.5810 s | 0.1780 s | 5,968,691 bytes |
+| `samtools index` | 0.7675 s | 0.4570 s | 0.0580 s | 6,887,834 bytes |
 
-The default `rsomics-bam` path was 1.86 times as fast by mean wall time and
-used 14.63% less mean peak RSS. It won 19 of 20 timed pairs; the paired mean
-wall-time difference was -0.3830 seconds, its sample standard deviation was
-0.2524 seconds, and the paired t-statistic was -6.786. Automatic parallelism
-increased mean CPU time by 43.94%; pass `-@ 0` when one-thread behavior is
+The default `rsomics-bam` path was 1.79 times as fast by mean wall time and
+used 13.34% less mean peak RSS. It won 19 of 20 timed pairs; the paired mean
+wall-time difference was -0.3395 seconds, its sample standard deviation was
+0.3517 seconds, and the paired t-statistic was -4.317. Automatic parallelism
+increased mean CPU time by 47.38%; pass `-@ 0` when one-thread behavior is
 preferred over the default latency target.
 
 The coordinate-sorted WGBS fixture contained 4,000,000 records and was
@@ -128,12 +128,12 @@ accepted both files with identical output. Their SHA-256 was
 
 The timing ledger, generated summary, environment record, and JSON index
 summary had SHA-256 values
-`1981d241a40269c6102b8dc9567ce65566278a78dfefba2548079fc6570daf66`,
-`54e669146b7a2051d37ba51ec178978095d105de784ea8549948584b5c4db77e`,
-`b1043639745ab3b55180021ae9aee9622a042d9cfefd6a60f5da759a39af503a`,
-and `cbb3e1f5caa6703b34dd34ad2fc4b621efd125f3834014fd1b28104289d675e9`,
+`c8d618a06fac44013f944f03007352b0e66565ba050b9e127504b3fd99758d4c`,
+`8dbbc698c710d1c1f9bd30db045143b48065bb5247b77903efed09d8bc300782`,
+`47ac9fad280c29bfd7d1927954806c6ce7228dc9ba3e86738b68f843570aa618`,
+and `38204d348bcee017fd714ef77760f62b950de290a8be66905e17966e6455f677`,
 respectively. The measured `rsomics-bam` and samtools binaries had SHA-256
-values `652357149ca77d9ddc6410c6381fcae0251bbbdc861a4c98125a0ee730833312`
+values `e96947024854724583af0e688d936b23b0918c275d9dea3a8a8789b5820dab37`
 and `c265b440b09c4b21d1f25a65963cf907b0d9f9d18caa9382c31104158f89d027`.
 These results establish the default BAM/BAI gate on this fixture; they do not
 claim the same advantage for explicit equal thread counts, CSI, BGZF SAM, or
@@ -170,7 +170,7 @@ RSOMICS_COMMIT=ebf7f96 benchmarks/depth-vs-samtools-macos.sh \
 alternates command order, and rejects any BAI or `idxstats` disagreement:
 
 ```sh
-RSOMICS_COMMIT=ff1f0ea benchmarks/index-vs-samtools-macos.sh \
+RSOMICS_COMMIT=dce21e7 benchmarks/index-vs-samtools-macos.sh \
   target/release/rsomics-bam \
   /path/to/samtools \
   /path/to/input.bam \
