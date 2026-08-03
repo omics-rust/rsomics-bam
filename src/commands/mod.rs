@@ -2,6 +2,7 @@ pub(crate) mod depth;
 pub(crate) mod flags;
 pub(crate) mod flagstat;
 pub(crate) mod head;
+pub(crate) mod index;
 pub(crate) mod mpileup;
 pub(crate) mod quickcheck;
 pub(crate) mod samples;

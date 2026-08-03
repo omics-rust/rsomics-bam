@@ -147,6 +147,95 @@ fn mpileup_matches_samtools_1_24_for_sam_bam_and_cram() {
     }
 }
 
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn index_matches_samtools_1_24_for_bai_csi_crai_and_bgzf_sam() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let inputs = build_alignment_set(directory.path());
+
+    for (name, options) in [("bai", vec!["-@", "2"]), ("csi", vec!["-c", "-m", "1"])] {
+        let ours = directory.path().join(format!("ours-{name}.bam"));
+        let oracle = directory.path().join(format!("oracle-{name}.bam"));
+        fs::copy(&inputs.bam, &ours).unwrap();
+        fs::copy(&inputs.bam, &oracle).unwrap();
+
+        let mut ours_arguments = vec!["index"];
+        ours_arguments.extend(options.iter().copied());
+        ours_arguments.push(ours.to_str().unwrap());
+        run_ours(&ours_arguments);
+        let mut oracle_arguments = vec!["index"];
+        oracle_arguments.extend(options.iter().copied());
+        oracle_arguments.push(oracle.to_str().unwrap());
+        run_samtools(&oracle_arguments);
+
+        assert_eq!(
+            run_ours(&["view", ours.to_str().unwrap(), "chr1:1-8"]).stdout,
+            run_samtools(&["view", oracle.to_str().unwrap(), "chr1:1-8"]).stdout,
+            "{name} region"
+        );
+        assert_eq!(
+            run_samtools(&["idxstats", ours.to_str().unwrap()]).stdout,
+            run_samtools(&["idxstats", oracle.to_str().unwrap()]).stdout,
+            "{name} idxstats"
+        );
+    }
+
+    let ours_cram = directory.path().join("ours.cram");
+    let oracle_cram = directory.path().join("oracle.cram");
+    fs::copy(&inputs.cram, &ours_cram).unwrap();
+    fs::copy(&inputs.cram, &oracle_cram).unwrap();
+    run_ours(&["index", "-@", "2", ours_cram.to_str().unwrap()]);
+    run_samtools(&["index", "-@", "2", oracle_cram.to_str().unwrap()]);
+    assert_eq!(
+        run_ours(&[
+            "view",
+            "-T",
+            inputs.reference.to_str().unwrap(),
+            ours_cram.to_str().unwrap(),
+            "chr1:1-8",
+        ])
+        .stdout,
+        run_samtools(&[
+            "view",
+            "-T",
+            inputs.reference.to_str().unwrap(),
+            oracle_cram.to_str().unwrap(),
+            "chr1:1-8",
+        ])
+        .stdout
+    );
+    assert_eq!(
+        run_samtools(&["idxstats", ours_cram.to_str().unwrap()]).stdout,
+        run_samtools(&["idxstats", oracle_cram.to_str().unwrap()]).stdout
+    );
+
+    let source = directory.path().join("records.sam.gz");
+    run_samtools(&[
+        "view",
+        "-h",
+        "-O",
+        "sam",
+        "-o",
+        source.to_str().unwrap(),
+        inputs.sam.to_str().unwrap(),
+    ]);
+    let ours_sam = directory.path().join("ours.sam.gz");
+    let oracle_sam = directory.path().join("oracle.sam.gz");
+    fs::copy(&source, &ours_sam).unwrap();
+    fs::copy(&source, &oracle_sam).unwrap();
+    run_ours(&["index", ours_sam.to_str().unwrap()]);
+    run_samtools(&["index", oracle_sam.to_str().unwrap()]);
+    assert_eq!(
+        run_ours(&["view", ours_sam.to_str().unwrap(), "chr1:1-8"]).stdout,
+        run_samtools(&["view", oracle_sam.to_str().unwrap(), "chr1:1-8"]).stdout
+    );
+    assert_eq!(
+        run_samtools(&["idxstats", ours_sam.to_str().unwrap()]).stdout,
+        run_samtools(&["idxstats", oracle_sam.to_str().unwrap()]).stdout
+    );
+}
+
 struct AlignmentSet {
     sam: PathBuf,
     bam: PathBuf,

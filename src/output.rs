@@ -1,7 +1,7 @@
 use std::fs;
 use std::io::{self, BufWriter, Write};
 use std::num::NonZero;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use noodles::sam::alignment::io::Write as _;
 use noodles::{bam, bgzf, sam};
@@ -88,6 +88,10 @@ impl<'a> TransactionalFile<'a> {
         self.temporary.as_file_mut()
     }
 
+    pub(crate) fn temporary_path(&self) -> &Path {
+        self.temporary.path()
+    }
+
     pub(crate) fn commit(mut self) -> Result<()> {
         if let Some(permissions) = self.permissions {
             self.temporary
@@ -111,6 +115,31 @@ impl<'a> TransactionalFile<'a> {
         })?;
         Ok(())
     }
+}
+
+pub(crate) fn same_target(left: &Path, right: &Path) -> Result<bool> {
+    if left.exists() && right.exists() {
+        return same_file::is_same_file(left, right).map_err(RsomicsError::Io);
+    }
+    Ok(target_identity(left)? == target_identity(right)?)
+}
+
+fn target_identity(path: &Path) -> Result<PathBuf> {
+    match fs::canonicalize(path) {
+        Ok(path) => return Ok(path),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(RsomicsError::Io(error)),
+    }
+    let name = path.file_name().ok_or_else(|| {
+        RsomicsError::ConfigError(format!("output path has no file name: {}", path.display()))
+    })?;
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::canonicalize(parent)
+        .map(|parent| parent.join(name))
+        .map_err(RsomicsError::Io)
 }
 
 impl<W> Writer<W>

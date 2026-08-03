@@ -10,6 +10,8 @@ pub mod flags;
 pub mod flagstat;
 /// Header and leading-record inspection.
 pub mod head;
+/// Alignment random-access index construction.
+pub mod index;
 /// Per-position pileup generation.
 pub mod mpileup;
 /// Alignment integrity checks.

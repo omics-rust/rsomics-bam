@@ -1051,6 +1051,8 @@ dependencies = [
  "rsomics-common",
  "rsomics-help",
  "rsomics-pileup",
+ "rust-htslib",
+ "same-file",
  "serde",
  "serde_json",
  "tempfile",
@@ -1058,9 +1060,9 @@ dependencies = [
 
 [[package]]
 name = "rsomics-bamio"
-version = "0.8.2"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a861cd4ea5afd0f97020b8af180431529494c36dc86687014be1a39b90acaea"
+checksum = "22c629df18b27af31c4e6c79f318bd96d240e8e4b6c64aa6f6735354db6b7855"
 dependencies = [
  "crossbeam-channel",
  "libdeflater",

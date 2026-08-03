@@ -1,5 +1,4 @@
 use std::ffi::OsStr;
-use std::fs;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
@@ -8,7 +7,11 @@ use rsomics_common::{Result, RsomicsError};
 use serde::Serialize;
 
 use crate::cli::CommandOutput;
-use crate::{flags, output::TransactionalFile, view};
+use crate::{
+    flags,
+    output::{TransactionalFile, same_target},
+    view,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum Format {
@@ -297,28 +300,6 @@ fn validate_count_output(input: &Path, output: Option<&Path>, counts: Option<&Pa
         ));
     }
     Ok(())
-}
-
-fn same_target(left: &Path, right: &Path) -> Result<bool> {
-    Ok(target_identity(left)? == target_identity(right)?)
-}
-
-fn target_identity(path: &Path) -> Result<PathBuf> {
-    match fs::canonicalize(path) {
-        Ok(path) => return Ok(path),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(error) => return Err(RsomicsError::Io(error)),
-    }
-    let name = path.file_name().ok_or_else(|| {
-        RsomicsError::ConfigError(format!("output path has no file name: {}", path.display()))
-    })?;
-    let parent = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    fs::canonicalize(parent)
-        .map(|parent| parent.join(name))
-        .map_err(RsomicsError::Io)
 }
 
 fn parse_flags(value: &str) -> std::result::Result<u16, String> {

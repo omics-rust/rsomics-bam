@@ -3,6 +3,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 use noodles::sam::alignment::RecordBuf;
+use rsomics_common::{Result, RsomicsError};
 
 use crate::input::{self, Format};
 use crate::quickcheck::{FileReport, Problem};
@@ -67,13 +68,7 @@ pub(crate) fn check(path: &Path, allow_no_targets: bool) -> FileReport {
 }
 
 fn check_eof<const N: usize>(path: &Path, expected: &[u8; N], problems: &mut Vec<Problem>) {
-    let result = File::open(path).and_then(|mut file| {
-        let offset = i64::try_from(N).unwrap();
-        file.seek(SeekFrom::End(-offset))?;
-        let mut actual = [0; N];
-        file.read_exact(&mut actual)?;
-        Ok(actual == *expected)
-    });
+    let result = matches_eof(path, expected);
 
     match result {
         Ok(true) => {}
@@ -83,4 +78,35 @@ fn check_eof<const N: usize>(path: &Path, expected: &[u8; N], problems: &mut Vec
         }
         Err(_) => problems.push(Problem::EofCheck),
     }
+}
+
+pub(crate) fn require_bgzf_eof(path: &Path) -> Result<()> {
+    require_eof(path, &BGZF_EOF, "BGZF")
+}
+
+pub(crate) fn require_cram_eof(path: &Path) -> Result<()> {
+    require_eof(path, &CRAM_EOF, "CRAM")
+}
+
+fn require_eof<const N: usize>(path: &Path, expected: &[u8; N], format: &str) -> Result<()> {
+    match matches_eof(path, expected) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(RsomicsError::InvalidInput(format!(
+            "{}: {format} end-of-file marker is missing",
+            path.display()
+        ))),
+        Err(error) => Err(RsomicsError::InvalidInput(format!(
+            "{}: checking {format} end-of-file marker: {error}",
+            path.display()
+        ))),
+    }
+}
+
+fn matches_eof<const N: usize>(path: &Path, expected: &[u8; N]) -> std::io::Result<bool> {
+    let mut file = File::open(path)?;
+    let offset = i64::try_from(N).unwrap();
+    file.seek(SeekFrom::End(-offset))?;
+    let mut actual = [0; N];
+    file.read_exact(&mut actual)?;
+    Ok(actual == *expected)
 }
