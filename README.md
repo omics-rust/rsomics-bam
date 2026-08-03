@@ -18,6 +18,7 @@ cargo install rsomics-bam
 | `flagstat` | Count records by SAM flag category |
 | `head` | Print alignment headers and leading records as SAM |
 | `index` | Build BAI, CSI, or CRAI random-access indexes |
+| `merge` | Merge ordered alignment files into BAM |
 | `mpileup` | Generate per-position text pileup |
 | `quickcheck` | Validate headers and format-specific end markers |
 | `samples` | List samples and other read-group metadata |
@@ -29,6 +30,7 @@ rsomics-bam view -b -@ 4 -q 20 -o selected.bam input.bam
 rsomics-bam view -c -F UNMAP,SECONDARY input.cram -T reference.fa
 rsomics-bam depth -a -b targets.bed sample.bam
 rsomics-bam index -c -m 14 sample.bam
+rsomics-bam merge lane1.bam lane2.cram --reference reference.fa -o merged.bam
 rsomics-bam mpileup -f reference.fa -Q 20 input.bam
 rsomics-bam sort -m 768M -o sorted.bam input.bam
 ```
@@ -40,6 +42,12 @@ request for CRAM decoding fails explicitly because the current decoder does
 not provide ordered parallel decoding. `index` uses up to four additional
 workers when `-@` is omitted; pass `-@ 0` for one-thread indexing. Named index
 outputs are committed only after the complete index has been built and parsed.
+`merge` accepts named, already ordered SAM, BAM, and CRAM inputs and writes BAM.
+It reconciles reference, read-group, and program records, validates both the
+declared and observed order, and keeps its per-input read-ahead bounded. It
+supports coordinate, natural query-name, bytewise query-name, and
+template-coordinate order. Named outputs replace their destination only after
+the complete BGZF stream passes validation.
 `sort` accepts SAM, BAM, and CRAM input and writes BAM. It supports coordinate,
 natural query-name, bytewise query-name, and template-coordinate order. Its
 memory option is a total record budget, external merges use bounded fan-in,

@@ -12,6 +12,8 @@ pub mod flagstat;
 pub mod head;
 /// Alignment random-access index construction.
 pub mod index;
+/// Ordered alignment merging.
+pub mod merge;
 /// Per-position pileup generation.
 pub mod mpileup;
 /// Alignment-header program provenance.
@@ -27,9 +29,11 @@ pub mod view;
 
 pub use program::Program;
 
+mod alignment_order;
 mod cli;
 mod commands;
 mod filter;
+mod header_merge;
 mod hts_metadata;
 mod hts_quickcheck;
 mod input;

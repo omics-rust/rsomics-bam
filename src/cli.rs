@@ -5,7 +5,7 @@ use rsomics_common::{OutputArgs, Result, ToolMeta, run as run_tool};
 use serde::Serialize;
 
 use crate::{
-    commands, depth, flags, flagstat, head, index, mpileup, quickcheck, samples, sort, view,
+    commands, depth, flags, flagstat, head, index, merge, mpileup, quickcheck, samples, sort, view,
 };
 
 const META: ToolMeta = ToolMeta {
@@ -40,6 +40,8 @@ enum Command {
     Head(commands::head::Arguments),
     /// Build BAI, CSI, or CRAI random-access indexes
     Index(commands::index::Arguments),
+    /// Merge ordered alignment files
+    Merge(commands::merge::Arguments),
     /// Generate per-position text pileup
     Mpileup(commands::mpileup::Arguments),
     /// Check alignment headers and format-specific end markers
@@ -60,6 +62,7 @@ pub(crate) enum CommandOutput {
     Flagstat { counts: Box<flagstat::Counts> },
     Head { summary: head::Summary },
     Index { summaries: Vec<index::Summary> },
+    Merge { summary: merge::Summary },
     Mpileup { summary: mpileup::Summary },
     Quickcheck { report: quickcheck::Report },
     Samples { report: samples::Report },
@@ -81,6 +84,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Flagstat(arguments) => commands::flagstat::execute(arguments, cli.output.json),
         Command::Head(arguments) => commands::head::execute(arguments, cli.output.json),
         Command::Index(arguments) => commands::index::execute(arguments, cli.output.json),
+        Command::Merge(arguments) => commands::merge::execute(arguments, cli.output.json),
         Command::Mpileup(arguments) => commands::mpileup::execute(arguments, cli.output.json),
         Command::Quickcheck(arguments) => commands::quickcheck::execute(arguments, cli.output.json),
         Command::Samples(arguments) => commands::samples::execute(arguments, cli.output.json),
