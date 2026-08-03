@@ -1,0 +1,15 @@
+@HD	VN:1.6	SO:unsorted	GO:none	SS:unsorted:old
+@SQ	SN:chr1	LN:1000
+@SQ	SN:chr2	LN:1000
+@RG	ID:rg-a	LB:library-b
+@RG	ID:rg-b	LB:library-a
+@PG	ID:aligner	PN:fixture
+pair12	99	chr2	200	60	10M	=	250	60	ACGTACGTAC	FFFFFFFFFF	MC:Z:10M	RG:Z:rg-a	CB:Z:cell-b	MI:Z:molecule/1
+single1	0	chr1	100	60	10M	*	0	0	ACGTACGTAC	FFFFFFFFFF
+pair2	99	chr1	50	60	2S8M	=	100	58	ACGTACGTAC	FFFFFFFFFF	MC:Z:8M2S	RG:Z:rg-b	CB:Z:cell-a	MI:Z:molecule/1
+single01	0	chr1	100	60	10M	*	0	0	ACGTACGTAC	FFFFFFFFFF
+tie-reverse	16	chr1	100	60	10M	*	0	0	ACGTACGTAC	FFFFFFFFFF
+tie-forward	0	chr1	100	60	10M	*	0	0	ACGTACGTAC	FFFFFFFFFF
+pair12	147	chr2	250	60	10M	=	200	-60	ACGTACGTAC	FFFFFFFFFF	MC:Z:10M	RG:Z:rg-a	CB:Z:cell-b	MI:Z:molecule/2
+pair2	147	chr1	100	60	8M2S	=	50	-58	ACGTACGTAC	FFFFFFFFFF	MC:Z:2S8M	RG:Z:rg-b	CB:Z:cell-a	MI:Z:molecule/2
+unmapped10	4	*	0	0	*	*	0	0	ACGTACGTAC	FFFFFFFFFF

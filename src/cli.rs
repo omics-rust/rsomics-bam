@@ -4,7 +4,9 @@ use clap::{Parser, Subcommand};
 use rsomics_common::{OutputArgs, Result, ToolMeta, run as run_tool};
 use serde::Serialize;
 
-use crate::{commands, depth, flags, flagstat, head, index, mpileup, quickcheck, samples, view};
+use crate::{
+    commands, depth, flags, flagstat, head, index, mpileup, quickcheck, samples, sort, view,
+};
 
 const META: ToolMeta = ToolMeta {
     name: "rsomics-bam",
@@ -44,6 +46,8 @@ enum Command {
     Quickcheck(commands::quickcheck::Arguments),
     /// List samples declared by alignment read groups
     Samples(commands::samples::Arguments),
+    /// Sort alignments with bounded memory
+    Sort(commands::sort::Arguments),
     /// Filter and convert alignment records
     View(Box<commands::view::Arguments>),
 }
@@ -59,6 +63,7 @@ pub(crate) enum CommandOutput {
     Mpileup { summary: mpileup::Summary },
     Quickcheck { report: quickcheck::Report },
     Samples { report: samples::Report },
+    Sort { summary: sort::Summary },
     View { summary: view::Summary },
 }
 
@@ -79,6 +84,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Mpileup(arguments) => commands::mpileup::execute(arguments, cli.output.json),
         Command::Quickcheck(arguments) => commands::quickcheck::execute(arguments, cli.output.json),
         Command::Samples(arguments) => commands::samples::execute(arguments, cli.output.json),
+        Command::Sort(arguments) => commands::sort::execute(arguments, cli.output.json),
         Command::View(arguments) => commands::view::execute(*arguments, cli.output.json),
     }
 }

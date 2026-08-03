@@ -84,3 +84,4 @@ jobs:
         run: |
           cargo test --locked --test compat -- --ignored
           cargo test --locked --test depth -- --ignored
+          cargo test --locked --test sort -- --ignored

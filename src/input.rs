@@ -323,6 +323,10 @@ pub(crate) fn detect_format(input: &Path) -> Result<Format> {
     detect_source(input).map(|(format, _)| format)
 }
 
+pub(crate) fn is_bgzf(input: &Path) -> Result<bool> {
+    detect_source(input).map(|(_, compression)| compression == Compression::Bgzf)
+}
+
 fn detect_source(input: &Path) -> Result<(Format, Compression)> {
     let mut source = BufReader::new(File::open(input).map_err(|error| open_error(input, error))?);
     let mut magic = [0; 4];

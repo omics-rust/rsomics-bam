@@ -14,12 +14,18 @@ pub mod head;
 pub mod index;
 /// Per-position pileup generation.
 pub mod mpileup;
+/// Alignment-header program provenance.
+mod program;
 /// Alignment integrity checks.
 pub mod quickcheck;
 /// Read-group sample metadata.
 pub mod samples;
+/// Bounded-memory alignment sorting.
+pub mod sort;
 /// Alignment filtering and format conversion.
 pub mod view;
+
+pub use program::Program;
 
 mod cli;
 mod commands;

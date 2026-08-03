@@ -4,14 +4,11 @@ use std::str::FromStr;
 
 use noodles::core;
 use noodles::sam;
-use noodles::sam::header::record::value::{
-    Map,
-    map::{Program as SamProgram, program::tag},
-};
 use rsomics_common::{Result, RsomicsError};
 use serde::Serialize;
 
 use crate::{
+    Program,
     filter::{Filter, LibraryFilter, QnameFilter, ReadGroupFilter},
     input, md, output,
 };
@@ -35,36 +32,6 @@ pub enum Compression {
 pub enum Region {
     Mapped(core::Region),
     Unmapped,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Program<'a> {
-    name: &'a str,
-    version: &'a str,
-    command_line: &'a str,
-}
-
-impl<'a> Program<'a> {
-    pub fn new(name: &'a str, version: &'a str, command_line: &'a str) -> Result<Self> {
-        if name.is_empty() || version.is_empty() {
-            return Err(RsomicsError::InvalidInput(
-                "program name and version cannot be empty".to_owned(),
-            ));
-        }
-        if [name, version, command_line]
-            .iter()
-            .any(|value| value.contains(['\t', '\r', '\n']))
-        {
-            return Err(RsomicsError::InvalidInput(
-                "program header fields cannot contain tabs or line breaks".to_owned(),
-            ));
-        }
-        Ok(Self {
-            name,
-            version,
-            command_line,
-        })
-    }
 }
 
 impl FromStr for Region {
@@ -199,7 +166,7 @@ where
         }
     } else {
         if let Some(program) = options.program {
-            add_program(&mut output_header, program)?;
+            program.add_to(&mut output_header)?;
         }
         let output_format = match options.output_format {
             Format::Sam => output::Format::Sam,
@@ -318,33 +285,6 @@ fn transform_record(record: &mut sam::alignment::RecordBuf, options: Options<'_>
     }
 }
 
-fn add_program(header: &mut sam::Header, program: Program<'_>) -> Result<()> {
-    let programs = header.programs_mut().as_mut();
-    let previous = programs.last().map(|(id, _)| id.clone());
-    let mut id = program.name.to_owned();
-    let mut suffix = 0u64;
-
-    while programs.contains_key(id.as_bytes()) {
-        suffix = suffix.checked_add(1).ok_or_else(|| {
-            RsomicsError::InvalidInput("program ID suffix exceeds u64".to_owned())
-        })?;
-        id = format!("{}.{}", program.name, suffix);
-    }
-
-    let mut builder = Map::<SamProgram>::builder()
-        .insert(tag::NAME, program.name)
-        .insert(tag::VERSION, program.version)
-        .insert(tag::COMMAND_LINE, program.command_line);
-    if let Some(previous) = previous {
-        builder = builder.insert(tag::PREVIOUS_PROGRAM_ID, previous);
-    }
-    let map = builder
-        .build()
-        .map_err(|error| RsomicsError::InvalidInput(format!("building program record: {error}")))?;
-    programs.insert(id.into(), map);
-    Ok(())
-}
-
 fn visit_records(
     reader: &mut input::Reader,
     header: &noodles::sam::Header,
@@ -375,8 +315,6 @@ fn count_overflow() -> RsomicsError {
 
 #[cfg(test)]
 mod tests {
-    use noodles::sam::header::record::value::map::program::tag;
-
     use super::*;
 
     #[test]
@@ -387,47 +325,5 @@ mod tests {
             Ok(Region::Mapped(region)) if region.to_string() == "chr1:8-13"
         ));
         assert!("chr1:0".parse::<Region>().is_err());
-    }
-
-    #[test]
-    fn adds_program_after_the_last_existing_record_with_a_unique_id() {
-        let mut header = sam::Header::builder()
-            .add_program("rsomics-bam", Map::default())
-            .add_program("aligner", Map::default())
-            .build();
-        add_program(
-            &mut header,
-            Program::new("rsomics-bam", "1.2.3", "rsomics-bam view input.bam").unwrap(),
-        )
-        .unwrap();
-
-        let program = &header.programs().as_ref()[b"rsomics-bam.1".as_slice()];
-        assert_eq!(
-            program
-                .other_fields()
-                .get(&tag::PREVIOUS_PROGRAM_ID)
-                .map(|value| value.as_ref()),
-            Some(b"aligner".as_slice())
-        );
-        assert_eq!(
-            program
-                .other_fields()
-                .get(&tag::NAME)
-                .map(|value| value.as_ref()),
-            Some(b"rsomics-bam".as_slice())
-        );
-        assert_eq!(
-            program
-                .other_fields()
-                .get(&tag::VERSION)
-                .map(|value| value.as_ref()),
-            Some(b"1.2.3".as_slice())
-        );
-    }
-
-    #[test]
-    fn program_fields_cannot_create_header_fields_or_lines() {
-        assert!(Program::new("rsomics-bam", "1.2.3", "view\tinput.bam").is_err());
-        assert!(Program::new("", "1.2.3", "view input.bam").is_err());
     }
 }

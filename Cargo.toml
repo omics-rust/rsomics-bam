@@ -32,6 +32,7 @@ rsomics-common = "0.12"
 rsomics-bamio = "0.8.4"
 rsomics-help = "0.4"
 rsomics-pileup = "0.8"
+rayon = "1"
 rust-htslib = { version = "1.0.1", default-features = false, features = ["bzip2", "lzma", "libdeflate"] }
 same-file = "1"
 serde = { version = "1", features = ["derive"] }

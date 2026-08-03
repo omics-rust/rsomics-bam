@@ -6,4 +6,5 @@ pub(crate) mod index;
 pub(crate) mod mpileup;
 pub(crate) mod quickcheck;
 pub(crate) mod samples;
+pub(crate) mod sort;
 pub(crate) mod view;
