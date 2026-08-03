@@ -2,6 +2,8 @@
 
 //! Programmatic interfaces for the rsomics SAM, BAM, and CRAM product.
 
+/// Bounded-memory read-name collation.
+pub mod collate;
 /// Per-position alignment depth.
 pub mod depth;
 /// SAM flag parsing and rendering.

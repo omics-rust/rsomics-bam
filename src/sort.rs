@@ -15,7 +15,8 @@ use serde::Serialize;
 
 pub use crate::alignment_order::Order;
 use crate::alignment_order::{
-    OrderedRecord, compare_ordered_records, library_lookup, ordered_record, set_sort_order,
+    InternalOrder, OrderedRecord, compare_ordered_records, library_lookup, ordered_record,
+    set_collate_order, set_sort_order,
 };
 use crate::hts_quickcheck::{require_bgzf_eof, require_cram_eof};
 use crate::{Program, input, md, output};
@@ -32,6 +33,45 @@ pub struct Options<'a> {
     pub reference: Option<&'a Path>,
     pub destination: Option<&'a Path>,
     pub program: Option<Program<'a>>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CollateOptions<'a> {
+    pub memory_limit: u64,
+    pub additional_threads: Option<usize>,
+    pub temporary_prefix: Option<&'a Path>,
+    pub reference: Option<&'a Path>,
+    pub program: Option<Program<'a>>,
+}
+
+#[derive(Clone, Copy)]
+struct EngineOptions<'a> {
+    memory_limit: u64,
+    additional_threads: Option<usize>,
+    temporary_prefix: Option<&'a Path>,
+    reference: Option<&'a Path>,
+    program: Option<Program<'a>>,
+}
+
+#[derive(Clone, Copy)]
+enum HeaderOrder {
+    Sort(Order),
+    Collate,
+}
+
+pub(crate) struct CollateStats {
+    pub records: u64,
+    pub memory_limit: u64,
+    pub additional_threads: usize,
+    pub temporary_runs: u64,
+    pub merge_passes: u32,
+}
+
+struct EngineStats {
+    records: u64,
+    additional_threads: usize,
+    temporary_runs: u64,
+    merge_passes: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -64,7 +104,7 @@ struct RunReader {
 
 struct HeapEntry {
     entry: OrderedRecord,
-    order: Order,
+    order: InternalOrder,
     run: usize,
     sequence: u64,
 }
@@ -162,6 +202,71 @@ pub fn write<W>(input_path: &Path, options: Options<'_>, output: W) -> Result<Su
 where
     W: Write + Send + 'static,
 {
+    let stats = write_ordered(
+        input_path,
+        EngineOptions {
+            memory_limit: options.memory_limit,
+            additional_threads: options.additional_threads,
+            temporary_prefix: options.temporary_prefix,
+            reference: options.reference,
+            program: options.program,
+        },
+        options.order.into(),
+        HeaderOrder::Sort(options.order),
+        output,
+    )?;
+    Ok(Summary {
+        input: input_path.to_path_buf(),
+        output: options.destination.map(Path::to_path_buf),
+        order: options.order,
+        records: stats.records,
+        memory_limit: options.memory_limit,
+        additional_threads: stats.additional_threads,
+        temporary_runs: stats.temporary_runs,
+        merge_passes: stats.merge_passes,
+    })
+}
+
+pub(crate) fn write_collated<W>(
+    input_path: &Path,
+    options: CollateOptions<'_>,
+    output: W,
+) -> Result<CollateStats>
+where
+    W: Write + Send + 'static,
+{
+    let stats = write_ordered(
+        input_path,
+        EngineOptions {
+            memory_limit: options.memory_limit,
+            additional_threads: options.additional_threads,
+            temporary_prefix: options.temporary_prefix,
+            reference: options.reference,
+            program: options.program,
+        },
+        InternalOrder::Collate,
+        HeaderOrder::Collate,
+        output,
+    )?;
+    Ok(CollateStats {
+        records: stats.records,
+        memory_limit: options.memory_limit,
+        additional_threads: stats.additional_threads,
+        temporary_runs: stats.temporary_runs,
+        merge_passes: stats.merge_passes,
+    })
+}
+
+fn write_ordered<W>(
+    input_path: &Path,
+    options: EngineOptions<'_>,
+    order: InternalOrder,
+    header_order: HeaderOrder,
+    output: W,
+) -> Result<EngineStats>
+where
+    W: Write + Send + 'static,
+{
     if options.memory_limit < MIN_MEMORY {
         return Err(RsomicsError::ConfigError(
             "sort memory must be at least 1 MiB".to_owned(),
@@ -203,7 +308,10 @@ where
     let mut reader = input::open(input_path, options.reference, input_threads)?;
     let input_format = reader.format();
     let mut header = reader.read_header(input_path)?;
-    set_sort_order(&mut header, options.order);
+    match header_order {
+        HeaderOrder::Sort(order) => set_sort_order(&mut header, order),
+        HeaderOrder::Collate => set_collate_order(&mut header),
+    }
     if let Some(program) = options.program {
         program.add_to(&mut header)?;
     }
@@ -217,7 +325,7 @@ where
     let mut ingest = |record| {
         let ordinal = records;
         records = records.checked_add(1).ok_or_else(count_overflow)?;
-        let entry = ordered_record(record, options.order, &header, &libraries, ordinal)?;
+        let entry = ordered_record(record, order, &header, &libraries, ordinal)?;
         let entry_memory = entry.memory()?;
         if !entries.is_empty()
             && memory
@@ -227,7 +335,7 @@ where
             runs.push(write_run(
                 &mut entries,
                 &header,
-                options.order,
+                order,
                 &pool,
                 &layout,
                 additional_threads,
@@ -255,7 +363,7 @@ where
     let initial_runs;
     let merge_passes;
     if runs.is_empty() {
-        sort_entries(&mut entries, options.order, &pool);
+        sort_entries(&mut entries, order, &pool);
         write_entries(output, &header, &entries, additional_threads)?;
         initial_runs = 0;
         merge_passes = 0;
@@ -264,7 +372,7 @@ where
             runs.push(write_run(
                 &mut entries,
                 &header,
-                options.order,
+                order,
                 &pool,
                 &layout,
                 additional_threads,
@@ -276,7 +384,7 @@ where
         let (runs, consolidation_passes) = consolidate_runs(
             runs,
             &header,
-            options.order,
+            order,
             &libraries,
             &layout,
             additional_threads,
@@ -284,7 +392,7 @@ where
         merge_runs_to_writer(
             &runs,
             &header,
-            options.order,
+            order,
             &libraries,
             output,
             additional_threads,
@@ -294,12 +402,8 @@ where
         })?;
     }
 
-    Ok(Summary {
-        input: input_path.to_path_buf(),
-        output: options.destination.map(Path::to_path_buf),
-        order: options.order,
+    Ok(EngineStats {
         records,
-        memory_limit: options.memory_limit,
         additional_threads,
         temporary_runs: initial_runs,
         merge_passes,
@@ -331,7 +435,7 @@ where
 fn write_run(
     entries: &mut Vec<OrderedRecord>,
     header: &sam::Header,
-    order: Order,
+    order: InternalOrder,
     pool: &rayon::ThreadPool,
     layout: &TempLayout,
     additional_threads: usize,
@@ -362,7 +466,7 @@ where
     writer.write_raw_record(&record)
 }
 
-fn sort_entries(entries: &mut [OrderedRecord], order: Order, pool: &rayon::ThreadPool) {
+fn sort_entries(entries: &mut [OrderedRecord], order: InternalOrder, pool: &rayon::ThreadPool) {
     pool.install(|| {
         entries.par_sort_unstable_by(|a, b| {
             compare_ordered_records(order, a, b).then_with(|| a.ordinal.cmp(&b.ordinal))
@@ -373,7 +477,7 @@ fn sort_entries(entries: &mut [OrderedRecord], order: Order, pool: &rayon::Threa
 fn consolidate_runs(
     mut runs: Vec<RunFile>,
     header: &sam::Header,
-    order: Order,
+    order: InternalOrder,
     libraries: &HashMap<Vec<u8>, Arc<[u8]>>,
     layout: &TempLayout,
     additional_threads: usize,
@@ -407,7 +511,7 @@ fn consolidate_runs(
 fn merge_runs_to_writer<W>(
     runs: &[RunFile],
     header: &sam::Header,
-    order: Order,
+    order: InternalOrder,
     libraries: &HashMap<Vec<u8>, Arc<[u8]>>,
     output: W,
     additional_threads: usize,

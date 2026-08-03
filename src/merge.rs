@@ -75,7 +75,7 @@ impl PartialOrd for HeapEntry {
 
 impl Ord for HeapEntry {
     fn cmp(&self, other: &Self) -> Ordering {
-        compare_ordered_records(self.order, &self.record, &other.record)
+        compare_ordered_records(self.order.into(), &self.record, &other.record)
             .then_with(|| self.input.cmp(&other.input))
             .then_with(|| self.sequence.cmp(&other.sequence))
             .reverse()
@@ -102,9 +102,15 @@ impl InputState {
             }
         };
         header_merge::translate(&mut record, &self.translation)?;
-        let current = ordered_record(record, order, output_header, libraries, self.sequence)?;
+        let current = ordered_record(
+            record,
+            order.into(),
+            output_header,
+            libraries,
+            self.sequence,
+        )?;
         if self.previous.as_ref().is_some_and(|previous| {
-            compare_ordered_records(order, previous, &current) == Ordering::Greater
+            compare_ordered_records(order.into(), previous, &current) == Ordering::Greater
         }) {
             return Err(RsomicsError::InvalidInput(format!(
                 "input {} is not ordered as {}",

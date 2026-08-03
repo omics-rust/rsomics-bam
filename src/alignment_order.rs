@@ -28,6 +28,26 @@ pub enum Order {
     TemplateCoordinate,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum InternalOrder {
+    Coordinate,
+    QueryNameNatural,
+    QueryNameLexicographical,
+    TemplateCoordinate,
+    Collate,
+}
+
+impl From<Order> for InternalOrder {
+    fn from(order: Order) -> Self {
+        match order {
+            Order::Coordinate => Self::Coordinate,
+            Order::QueryNameNatural => Self::QueryNameNatural,
+            Order::QueryNameLexicographical => Self::QueryNameLexicographical,
+            Order::TemplateCoordinate => Self::TemplateCoordinate,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct OrderedRecord {
     pub(crate) record: RawRecord,
@@ -40,6 +60,7 @@ enum EntryKey {
     Coordinate((u32, u32, bool)),
     QueryName,
     Template(TemplateKey),
+    Collate(u32),
 }
 
 #[derive(Clone)]
@@ -60,7 +81,7 @@ impl OrderedRecord {
             .map_err(|_| RsomicsError::InvalidInput("record size exceeds u64".to_owned()))?;
         let key = match &self.key {
             EntryKey::Template(key) => u64::try_from(key.library.len()).unwrap_or(u64::MAX),
-            EntryKey::Coordinate(_) | EntryKey::QueryName => 0,
+            EntryKey::Coordinate(_) | EntryKey::QueryName | EntryKey::Collate(_) => 0,
         };
         payload
             .checked_add(mem::size_of::<Self>() as u64)
@@ -73,16 +94,19 @@ impl OrderedRecord {
 
 pub(crate) fn ordered_record(
     record: RawRecord,
-    order: Order,
+    order: InternalOrder,
     header: &sam::Header,
     libraries: &HashMap<Vec<u8>, Arc<[u8]>>,
     ordinal: u64,
 ) -> Result<OrderedRecord> {
     validate_record_coordinates(&record, header.reference_sequences().len())?;
     let key = match order {
-        Order::Coordinate => EntryKey::Coordinate(coordinate_key(&record)),
-        Order::QueryNameNatural | Order::QueryNameLexicographical => EntryKey::QueryName,
-        Order::TemplateCoordinate => EntryKey::Template(template_key(&record, libraries)?),
+        InternalOrder::Coordinate => EntryKey::Coordinate(coordinate_key(&record)),
+        InternalOrder::QueryNameNatural | InternalOrder::QueryNameLexicographical => {
+            EntryKey::QueryName
+        }
+        InternalOrder::TemplateCoordinate => EntryKey::Template(template_key(&record, libraries)?),
+        InternalOrder::Collate => EntryKey::Collate(collate_hash(record.name())),
     };
     Ok(OrderedRecord {
         record,
@@ -117,26 +141,48 @@ fn validate_reference_id(value: i32, count: usize, field: &str) -> Result<()> {
 }
 
 pub(crate) fn compare_ordered_records(
-    order: Order,
+    order: InternalOrder,
     a: &OrderedRecord,
     b: &OrderedRecord,
 ) -> Ordering {
     match (order, &a.key, &b.key) {
-        (Order::Coordinate, EntryKey::Coordinate(a), EntryKey::Coordinate(b)) => a.cmp(b),
-        (Order::QueryNameNatural, EntryKey::QueryName, EntryKey::QueryName) => {
+        (InternalOrder::Coordinate, EntryKey::Coordinate(a), EntryKey::Coordinate(b)) => a.cmp(b),
+        (InternalOrder::QueryNameNatural, EntryKey::QueryName, EntryKey::QueryName) => {
             natural_cmp(a.record.name(), b.record.name())
                 .then_with(|| name_flag_key(a.record.flags()).cmp(&name_flag_key(b.record.flags())))
         }
-        (Order::QueryNameLexicographical, EntryKey::QueryName, EntryKey::QueryName) => a
+        (InternalOrder::QueryNameLexicographical, EntryKey::QueryName, EntryKey::QueryName) => a
             .record
             .name()
             .cmp(b.record.name())
             .then_with(|| name_flag_key(a.record.flags()).cmp(&name_flag_key(b.record.flags()))),
-        (Order::TemplateCoordinate, EntryKey::Template(a_key), EntryKey::Template(b_key)) => {
-            compare_template(a_key, &a.record, b_key, &b.record)
-        }
+        (
+            InternalOrder::TemplateCoordinate,
+            EntryKey::Template(a_key),
+            EntryKey::Template(b_key),
+        ) => compare_template(a_key, &a.record, b_key, &b.record),
+        (InternalOrder::Collate, EntryKey::Collate(a_key), EntryKey::Collate(b_key)) => a_key
+            .cmp(b_key)
+            .then_with(|| a.record.name().cmp(b.record.name()))
+            .then_with(|| ((a.record.flags() >> 6) & 3).cmp(&((b.record.flags() >> 6) & 3))),
         _ => unreachable!("entry key matches the selected order"),
     }
+}
+
+fn collate_hash(name: &[u8]) -> u32 {
+    let Some((&first, rest)) = name.split_first() else {
+        return 0;
+    };
+    let mut hash = u32::from(first);
+    for &byte in rest {
+        hash = hash.wrapping_mul(31).wrapping_add(u32::from(byte));
+    }
+    hash = hash.wrapping_add(!(hash << 15));
+    hash ^= hash >> 10;
+    hash = hash.wrapping_add(hash << 3);
+    hash ^= hash >> 6;
+    hash = hash.wrapping_add(!(hash << 11));
+    hash ^ (hash >> 16)
 }
 
 fn coordinate_key(record: &RawRecord) -> (u32, u32, bool) {
@@ -515,6 +561,15 @@ pub(crate) fn set_sort_order(header: &mut sam::Header, order: Order) {
         }
     }
 }
+
+pub(crate) fn set_collate_order(header: &mut sam::Header) {
+    let hd = header
+        .header_mut()
+        .get_or_insert_with(Map::<map::Header>::default);
+    let fields = hd.other_fields_mut();
+    fields.insert(header_tag::SORT_ORDER, "unsorted".into());
+    fields.insert(header_tag::GROUP_ORDER, "query".into());
+}
 fn cigar_overflow() -> RsomicsError {
     RsomicsError::InvalidInput("CIGAR coordinate calculation overflows".to_owned())
 }
@@ -536,6 +591,15 @@ mod tests {
         assert!(name_flag_key(0x40) < name_flag_key(0x80));
         assert!(name_flag_key(0) < name_flag_key(0x800));
         assert!(name_flag_key(0x800) < name_flag_key(0x100));
+    }
+
+    #[test]
+    fn collate_hash_matches_samtools_1_24() {
+        assert_eq!(collate_hash(b""), 0);
+        assert_eq!(collate_hash(b"read1"), 4_022_420_600);
+        assert_eq!(collate_hash(b"pair2"), 2_054_658_801);
+        assert_eq!(collate_hash(b"pair12"), 2_390_552_450);
+        assert_eq!(collate_hash(b"unmapped10"), 1_792_842_080);
     }
 
     #[test]

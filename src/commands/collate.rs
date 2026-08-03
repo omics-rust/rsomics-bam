@@ -7,15 +7,13 @@ use rsomics_common::{Result, RsomicsError};
 use crate::cli::CommandOutput;
 use crate::commands::parse_memory;
 use crate::output::{TransactionalFile, same_target};
-use crate::{Program, hts_quickcheck, sort};
+use crate::{Program, collate, hts_quickcheck};
 
 #[derive(Debug, Args)]
 #[command(after_help = "\
 Examples:
-  rsomics-bam sort input.bam -o sorted.bam
-  rsomics-bam sort -n input.bam -o names.bam
-  rsomics-bam sort --template-coordinate input.bam -o templates.bam
-  rsomics-bam sort -m 256M -T /scratch/sample input.bam -o sorted.bam")]
+  rsomics-bam collate input.bam -o grouped.bam
+  rsomics-bam collate -m 128M -T /scratch/sample input.cram -o grouped.bam --reference ref.fa")]
 pub(crate) struct Arguments {
     /// Input SAM, BAM, or CRAM file; omit or use - for standard input
     #[arg(value_name = "ALIGNMENT")]
@@ -25,20 +23,8 @@ pub(crate) struct Arguments {
     #[arg(short = 'o', long, value_name = "FILE")]
     output: Option<PathBuf>,
 
-    /// Sort read names in natural numeric order
-    #[arg(short = 'n', long, conflicts_with_all = ["ascii_name", "template_coordinate"])]
-    natural_name: bool,
-
-    /// Sort read names in bytewise lexicographical order
-    #[arg(short = 'N', long, conflicts_with_all = ["natural_name", "template_coordinate"])]
-    ascii_name: bool,
-
-    /// Sort by unclipped template coordinates
-    #[arg(long, conflicts_with_all = ["natural_name", "ascii_name"])]
-    template_coordinate: bool,
-
     /// Total in-memory record budget; suffix K, M, or G is accepted
-    #[arg(short = 'm', long, value_name = "SIZE", default_value = "768M", value_parser = parse_memory)]
+    #[arg(short = 'm', long, value_name = "SIZE", default_value = "128M", value_parser = parse_memory)]
     memory: u64,
 
     /// Prefix for temporary BAM runs
@@ -49,7 +35,7 @@ pub(crate) struct Arguments {
     #[arg(long, value_name = "FASTA")]
     reference: Option<PathBuf>,
 
-    /// Additional sort and BAM I/O workers; omit for automatic parallelism
+    /// Additional collation and BAM I/O workers; omit for automatic parallelism
     #[arg(short = '@', long, value_name = "INT")]
     threads: Option<usize>,
 
@@ -66,7 +52,7 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
         .filter(|path| *path != Path::new("-"));
     if json && output.is_none() {
         return Err(RsomicsError::ConfigError(
-            "--json requires a named --output for sort".to_owned(),
+            "--json requires a named --output for collate".to_owned(),
         ));
     }
     if let Some(output) = output
@@ -74,19 +60,10 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
         && same_target(input, output)?
     {
         return Err(RsomicsError::ConfigError(
-            "sort input and output must be different files".to_owned(),
+            "collate input and output must be different files".to_owned(),
         ));
     }
 
-    let order = if arguments.natural_name {
-        sort::Order::QueryNameNatural
-    } else if arguments.ascii_name {
-        sort::Order::QueryNameLexicographical
-    } else if arguments.template_coordinate {
-        sort::Order::TemplateCoordinate
-    } else {
-        sort::Order::Coordinate
-    };
     let command_line = (!arguments.suppress_program_record).then(crate::program::command_line);
     let program = command_line
         .as_deref()
@@ -97,8 +74,7 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
         value.push(".tmp");
         PathBuf::from(value)
     });
-    let options = sort::Options {
-        order,
+    let options = collate::Options {
         memory_limit: arguments.memory,
         additional_threads: arguments.threads,
         temporary_prefix: arguments
@@ -114,12 +90,12 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
         Some(path) => {
             let transaction = TransactionalFile::new(path)?;
             let file = transaction.reopen()?;
-            let summary = sort::write(input, options, BufWriter::new(file))?;
+            let summary = collate::write(input, options, BufWriter::new(file))?;
             hts_quickcheck::require_bgzf_eof(transaction.temporary_path())?;
             transaction.commit()?;
             summary
         }
-        None => sort::write(input, options, io::stdout())?,
+        None => collate::write(input, options, io::stdout())?,
     };
-    Ok(CommandOutput::Sort { summary })
+    Ok(CommandOutput::Collate { summary })
 }

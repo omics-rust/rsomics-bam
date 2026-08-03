@@ -1,7 +1,8 @@
 # rsomics-bam
 
 `rsomics-bam` is a single command-line product for SAM, BAM, and CRAM
-inspection, filtering, conversion, validation, sorting, and pileup workflows.
+inspection, filtering, conversion, validation, collation, sorting, and pileup
+workflows.
 
 ## Install
 
@@ -13,6 +14,7 @@ cargo install rsomics-bam
 
 | Command | Purpose |
 |---|---|
+| `collate` | Group all alignments for each read name with bounded memory |
 | `depth` | Compute one per-input depth column at each position |
 | `flags` | Convert numeric and symbolic SAM flags |
 | `flagstat` | Count records by SAM flag category |
@@ -28,6 +30,7 @@ cargo install rsomics-bam
 ```sh
 rsomics-bam view -b -@ 4 -q 20 -o selected.bam input.bam
 rsomics-bam view -c -F UNMAP,SECONDARY input.cram -T reference.fa
+rsomics-bam collate -m 128M -o grouped.bam input.bam
 rsomics-bam depth -a -b targets.bed sample.bam
 rsomics-bam index -c -m 14 sample.bam
 rsomics-bam merge lane1.bam lane2.cram --reference reference.fa -o merged.bam
@@ -42,6 +45,10 @@ request for CRAM decoding fails explicitly because the current decoder does
 not provide ordered parallel decoding. `index` uses up to four additional
 workers when `-@` is omitted; pass `-@ 0` for one-thread indexing. Named index
 outputs are committed only after the complete index has been built and parsed.
+`collate` accepts SAM, BAM, and CRAM input and writes BAM with contiguous QNAME
+groups. Its total record-memory budget and external merge fan-in are bounded;
+the order between groups is intentionally unspecified. Fast-mode filtering and
+early-pair buffering are not yet exposed.
 `merge` accepts named, already ordered SAM, BAM, and CRAM inputs and writes BAM.
 It reconciles reference, read-group, and program records, validates both the
 declared and observed order, and keeps its per-input read-ahead bounded. It
