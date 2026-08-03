@@ -189,6 +189,56 @@ fixture; they do not claim the same advantage for explicit equal worker
 counts, other sort orders, SAM or CRAM input, or different compression and
 memory settings.
 
+## Merge benchmark
+
+The 2026-08-03 merge gate used feature revision
+`83b73a0c727436d9e69924f365af66d689c4f3aa` and samtools/HTSlib 1.24 on an
+Apple M2 Mac mini with 8 GiB of memory. It merged the same natural
+query-name-sorted 4,000,000-record BAM twice into an 8,000,000-record BAM.
+Twelve default-mode pairs alternated command order after one warm-up.
+
+```text
+rsomics-bam merge --no-PG -c -p -n input.bam input.bam -o ours.bam
+samtools merge --no-PG -c -p -n -@ 0 -f -o samtools.bam input.bam input.bam
+```
+
+| Tool | Mean wall time | Mean user time | Mean system time | Mean peak RSS |
+|---|---:|---:|---:|---:|
+| `rsomics-bam merge` | 3.0158 s | 10.6917 s | 0.8658 s | 20,959,232 bytes |
+| `samtools merge` | 9.3550 s | 8.0958 s | 0.5117 s | 13,873,152 bytes |
+
+The automatic `rsomics-bam` path was 3.10 times as fast by mean wall time.
+Its mean peak RSS was 1.51 times samtools' and its mean CPU time was 1.34
+times samtools'. The paired samtools-minus-rsomics wall-time difference was
+6.3392 seconds, with sample standard deviation 0.2091 seconds and paired
+t-statistic 105.00.
+
+An additional eight-pair gate gave both tools four additional workers. Mean
+wall time was 3.3613 seconds for `rsomics-bam` and 3.3288 seconds for samtools;
+the paired difference was -0.0325 seconds with a -0.157 t-statistic. Mean peak
+RSS was 20,170,752 versus 17,508,352 bytes. This does not establish an
+equal-worker throughput advantage.
+
+Every warm-up and timed pair passed samtools quickcheck and produced identical
+complete headers and order-sensitive `samtools checksum -a -O -T` reports.
+The header and record-checksum artifact SHA-256 values were
+`3337edeca3b276da02efcc727b3892ed201a54664a2491ea51971d9802e7e198` and
+`4661c6ad4c3488583659a7e19cf18589f5a8ab23f2614177589679b0f24d8491`.
+The measured rsomics and samtools binaries had SHA-256 values
+`7cfd2a587d8fd2ce6e0ba3e18d50aa492c8513c7c94724640ec110d855ed9381` and
+`c265b440b09c4b21d1f25a65963cf907b0d9f9d18caa9382c31104158f89d027`.
+The default environment, timing, and summary files had SHA-256 values
+`68d31dde9866c82faf15a24d425d3d838a298a129ded8f9f30bb8e97007ffa85`,
+`35af7a6edff77ebb5539b1ed42cb01db522d0006d8c3802eaf897b4a18c2b89e`, and
+`9f89349184dee6d0728ef8371251a84287f6e5fd423457ff502206123711fe3c`.
+The equal-worker files had SHA-256 values
+`1971065ebfb2c830c19a67cf9cd6db0b49737f15c2585b893b991d548c308495`,
+`59023213de23264404a3f2f6e6b36d2d8a60d957127ef16ef8d14da1dc40b540`, and
+`1b658de5b94e6d1ea1f8cde7c1a79b8ce691a92893dd0a61e69b62f8abef20ef`.
+These results establish the natural query-name BAM merge gate only; they do
+not claim the same performance for coordinate or template order, disjoint
+inputs, SAM or CRAM, or materially different input counts.
+
 ## Reproduction
 
 `benchmarks/view-vs-samtools.sh` records the machine, tool versions, binary and
@@ -244,3 +294,20 @@ RSOMICS_COMMIT=8433aea benchmarks/sort-vs-samtools-macos.sh \
 Pass `equal-workers` as the final argument to compare four additional workers
 for both tools while dividing samtools' per-thread memory setting to keep the
 requested sort-record budget near 768 MiB.
+
+`benchmarks/merge-vs-samtools-macos.sh` records the corresponding ordered
+merge comparison and rejects any complete-header or full-record checksum
+disagreement:
+
+```sh
+RSOMICS_COMMIT=83b73a0 benchmarks/merge-vs-samtools-macos.sh \
+  target/release/rsomics-bam \
+  /path/to/samtools \
+  /path/to/queryname-sorted.bam \
+  /path/to/results \
+  12 default natural
+```
+
+Use `equal-workers` as the mode to pass four additional workers to both tools.
+The final order argument is one of `coordinate`, `natural`,
+`lexicographical`, or `template-coordinate`.
