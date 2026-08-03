@@ -16,6 +16,7 @@ ours_index=$output_dir/ours.bai
 samtools_index=$output_dir/samtools.bai
 timing=$output_dir/.timing
 times=$output_dir/times.tsv
+summary_json=$output_dir/rsomics-summary.json
 
 [[ $(uname -s) == Darwin ]]
 [[ $repeats =~ ^[1-9][0-9]*$ ]]
@@ -31,7 +32,7 @@ mkdir -p "$output_dir"
     "$ours" --version
     "$samtools" --version
     shasum -a 256 "$ours" "$samtools" "$input"
-    stat -f 'input_bytes=%z' "$input"
+    stat -L -f 'input_bytes=%z' "$input"
     printf 'input_records=%s\n' "$("$samtools" view -c "$input")"
     printf 'repeats=%s\n' "$repeats"
 } > "$output_dir/environment.txt"
@@ -70,7 +71,7 @@ validate_pair() {
         <("$samtools" idxstats -X "$input" "$samtools_index")
 }
 
-"$ours" index -o "$ours_index" "$input"
+"$ours" --json index -o "$ours_index" "$input" > "$summary_json"
 "$samtools" index -o "$samtools_index" "$input"
 validate_pair
 
