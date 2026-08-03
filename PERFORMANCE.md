@@ -239,6 +239,63 @@ These results establish the natural query-name BAM merge gate only; they do
 not claim the same performance for coordinate or template order, disjoint
 inputs, SAM or CRAM, or materially different input counts.
 
+## Collate benchmark
+
+The 2026-08-03 collate gate used feature revision
+`24095b8650c26cde05cbc6684c076bc28adc1ea5` and samtools/HTSlib 1.24 on an
+Apple M2 Mac mini with 8 GiB of memory. The coordinate-sorted 4,000,000-record
+BAM was collated with a 128 MiB rsomics record budget. Twelve default-mode
+pairs alternated command order after one warm-up.
+
+```text
+rsomics-bam collate --no-PG -m 128M input.bam -o ours.bam
+samtools collate --no-PG -@ 0 -o samtools.bam input.bam
+```
+
+| Tool | Mean wall time | Mean CPU time | Mean peak RSS |
+|---|---:|---:|---:|
+| `rsomics-bam collate` | 8.3400 s | 15.5483 s | 155,277,995 bytes |
+| `samtools collate` | 13.5742 s | 7.0508 s | 40,013,824 bytes |
+
+`rsomics-bam` won all 12 pairs and was 1.63 times as fast by mean wall time.
+The paired samtools-minus-rsomics difference was 5.2342 seconds, with a
+1.8032-second sample standard deviation and paired t-statistic 10.055. The
+throughput advantage cost 2.21 times samtools' CPU time and 3.88 times its
+peak RSS. The rsomics warm-up created nine temporary runs and one merge pass.
+
+An eight-pair equal-worker gate passed four additional workers to both tools.
+Mean wall time was 9.2463 seconds for `rsomics-bam` and 11.6563 seconds for
+samtools, a 1.26 times advantage; rsomics won all eight pairs. The paired
+difference was 2.4100 seconds with a 1.0738-second standard deviation and
+paired t-statistic 6.348. Mean RSS was 154,777,600 versus 62,615,552 bytes,
+and rsomics used 1.82 times samtools' CPU time.
+
+Every warm-up and timed pair passed samtools quickcheck, had byte-identical
+complete headers, and produced the same order-independent multiset fingerprint
+over all four million complete SAM records after canonical auxiliary-field
+ordering. The header and fingerprint artifact SHA-256 values were
+`4f5236583648f1c96db66603dd2efdd062dc73ea95425e602121795d1705dfc8` and
+`a37f38f50018235bd8b85810f0721c73059d660084e879d8bff40ba4d824dd13`.
+The measured rsomics and samtools binary SHA-256 values were
+`2ddaffe39cfcf9f5cfea7ef191de52286a830fdd89b81e00cd97fa0338988527` and
+`c265b440b09c4b21d1f25a65963cf907b0d9f9d18caa9382c31104158f89d027`.
+
+The input was 77,438,045 bytes with SHA-256
+`fe4f1977a9eb9352faafec62f5ab44e77f93757fd5557917d83b4558bc5530d6`.
+The default environment, timing, summary, and JSON files had SHA-256 values
+`c2facd8c65a9019cea02122fd34253a15d04beb9b8222d305c0fd52b56e5f035`,
+`ea565b4be15d5a6948b67c872e4f4ecaf99d42a0963946f91cdbfc7ba5b0f56d`,
+`0bdcba7be536ab7185cc66cfbdf2c4865c97154b7953704f2604fc7507a697e1`,
+and `120fb5a36ebd0a8cebf9d91de08f1b04456d1a7eefe27795e5de950d12a501a5`.
+The equal-worker files had SHA-256 values
+`191e3ee70c3edf1f92893953d264e16a3ef7ff8bda5cbe0404bd43878a118cdf`,
+`36014358fe15b436eea5be11572853b25b41faac5ae478ef08d8e80f675b6fb7`,
+`f6817ca9304bcb5943b0703d4bbd6a5651980b119b4a434c03bada44c8e5470c`,
+and `5952e9281ffe46cd97be73ca0131d3a0f0e75082500bd83f1e479a1a1f79f3ea`.
+These results establish a BAM wall-time advantage for standard collation on
+this machine and fixture. They establish no CPU or memory advantage and do not
+cover fast mode, SAM or CRAM input, or materially different name distributions.
+
 ## Reproduction
 
 `benchmarks/view-vs-samtools.sh` records the machine, tool versions, binary and
@@ -311,3 +368,18 @@ RSOMICS_COMMIT=83b73a0 benchmarks/merge-vs-samtools-macos.sh \
 Use `equal-workers` as the mode to pass four additional workers to both tools.
 The final order argument is one of `coordinate`, `natural`,
 `lexicographical`, or `template-coordinate`.
+
+`benchmarks/collate-vs-samtools-macos.sh` compares standard BAM collation,
+alternates command order, and rejects any complete-header or order-independent
+full-record multiset disagreement:
+
+```sh
+RSOMICS_COMMIT=24095b8 benchmarks/collate-vs-samtools-macos.sh \
+  target/release/rsomics-bam \
+  /path/to/samtools \
+  /path/to/input.bam \
+  /path/to/results \
+  12 default
+```
+
+Use `equal-workers` as the mode to pass four additional workers to both tools.
