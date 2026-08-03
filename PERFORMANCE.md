@@ -139,6 +139,56 @@ These results establish the default BAM/BAI gate on this fixture; they do not
 claim the same advantage for explicit equal thread counts, CSI, BGZF SAM, or
 CRAM.
 
+## Sort benchmark
+
+The 2026-08-03 sort gate used revision
+`8433aea711d59d9977f9c2734f5396c09bd6de32` and samtools/HTSlib 1.24 on an
+Apple M2 Mac mini with 8 GiB of memory. Twenty timed pairs alternated command
+order after one warm-up. Both commands received a 768 MiB memory setting.
+`rsomics-bam sort` selected its default four additional workers; samtools used
+its default one-thread path.
+
+```text
+rsomics-bam sort --no-PG -m 768M -o ours.bam input.bam
+samtools sort --no-PG -m 768M -o samtools.bam input.bam
+```
+
+| Tool | Mean wall time | Mean user time | Mean system time | Mean peak RSS |
+|---|---:|---:|---:|---:|
+| `rsomics-bam sort` | 6.7300 s | 9.0265 s | 2.8475 s | 848,793,600 bytes |
+| `samtools sort` | 11.5080 s | 7.1435 s | 1.8650 s | 960,046,694 bytes |
+
+The default `rsomics-bam` path was 1.71 times as fast by mean wall time and
+used 11.59% less mean peak RSS. It won all 20 timed pairs; the paired mean
+wall-time difference was -4.7780 seconds, its sample standard deviation was
+1.0959 seconds, and the paired t-statistic was -19.499. Automatic parallelism
+increased mean CPU time by 31.81%; pass `-@ 0` when one-thread behavior is
+preferred over the default latency target.
+
+The query-name-sorted WGBS fixture contained 4,000,000 records and was
+77,438,055 bytes. Its SHA-256 was
+`057e5ff8c46f5870d7c925d28f429a3bb61745a2448c0f0c948e110d131e452e`.
+It was derived from the index benchmark fixture with samtools 1.24 natural
+query-name sorting and no added program record. The rsomics warm-up produced
+two temporary runs and one merge pass. Every warm-up and timed pair had an
+identical complete header and order-sensitive `samtools checksum -a -O`
+report; the final checksum artifact SHA-256 was
+`44eeec9a781436072463cc707feb982e727278ce5b33125742c86483947550a8`.
+
+The timing ledger, generated summary, environment record, and JSON sort
+summary had SHA-256 values
+`077fcc9b4183162834c837ea38b136f92a4c690084760dc7d35d6e20927f4abb`,
+`922f3fb081d964ef6613d4c080c40b981bd0c0a964756ed3ddb22aa96877945a`,
+`fa7926c350d86604f45365d78a0d07be93cb299fc0c286042737d833f5d9f761`,
+and `046cc7ab2eddeff0fc98e4cd0d090a82bf66d067653c91504b35ba48e27ba39b`.
+The measured `rsomics-bam` and samtools binaries had SHA-256 values
+`3ce9d6a56d0bc7511416a5e3f2ac0f7147ae5c81eeca179249c5ad243b3934af`
+and `c265b440b09c4b21d1f25a65963cf907b0d9f9d18caa9382c31104158f89d027`.
+These results establish the default coordinate-sort latency gate on this
+fixture; they do not claim the same advantage for explicit equal worker
+counts, other sort orders, SAM or CRAM input, or different compression and
+memory settings.
+
 ## Reproduction
 
 `benchmarks/view-vs-samtools.sh` records the machine, tool versions, binary and
@@ -177,3 +227,20 @@ RSOMICS_COMMIT=dce21e7 benchmarks/index-vs-samtools-macos.sh \
   /path/to/results \
   20
 ```
+
+`benchmarks/sort-vs-samtools-macos.sh` records the default coordinate-sort
+comparison, alternates command order, and rejects any header or full-record
+checksum disagreement:
+
+```sh
+RSOMICS_COMMIT=8433aea benchmarks/sort-vs-samtools-macos.sh \
+  target/release/rsomics-bam \
+  /path/to/samtools \
+  /path/to/queryname-sorted.bam \
+  /path/to/results \
+  20 default
+```
+
+Pass `equal-workers` as the final argument to compare four additional workers
+for both tools while dividing samtools' per-thread memory setting to keep the
+requested sort-record budget near 768 MiB.
