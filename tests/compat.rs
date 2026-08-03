@@ -475,6 +475,12 @@ fn view_controls_program_header_provenance() {
 }
 
 #[test]
+fn view_program_path_remains_available() {
+    let program = rsomics_bam::Program::new("tool", "1.0.0", "tool view input.bam").unwrap();
+    let _: rsomics_bam::view::Program<'_> = program;
+}
+
+#[test]
 fn view_reads_alignment_from_stdin() {
     let mut command = binary();
     command.args(["view", "-c", "-"]);

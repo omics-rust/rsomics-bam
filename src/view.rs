@@ -7,8 +7,9 @@ use noodles::sam;
 use rsomics_common::{Result, RsomicsError};
 use serde::Serialize;
 
+pub use crate::Program;
+
 use crate::{
-    Program,
     filter::{Filter, LibraryFilter, QnameFilter, ReadGroupFilter},
     input, md, output,
 };
