@@ -551,7 +551,7 @@ and `ca6ae968349466db34aa481149c0fc005689a3595cc3a3f8627139316754d733`.
 ## Import benchmark
 
 The 2026-08-10 import gate used feature revision
-`daeb5095419af60f723d5a595282757d5b67957b` and samtools/HTSlib 1.24 on an
+`1df18368dd7c6e969af768bbf9c770f786ad0d1e` and samtools/HTSlib 1.24 on an
 Apple M2 Mac mini with 8 GiB of memory. The paired WGSIM fixture contained
 500,000 reads in each mate file. Single-input measurements used the first mate
 file; paired measurements interleaved both files into one unmapped BAM. Both
@@ -566,20 +566,20 @@ rsomics-bam import -1 reads-1.fq -2 reads-2.fq --no-PG -@ 4 -o ours.bam
 samtools import -1 reads-1.fq -2 reads-2.fq --no-PG -@ 4 -o samtools.bam
 ```
 
-| Input mode | Tool | Mean wall time | Mean CPU time | Mean peak RSS |
+| Input mode | Tool | Mean wall time | Mean user time | Mean peak RSS |
 |---|---|---:|---:|---:|
-| Single | `rsomics-bam import` | 0.2833 s | 1.1208 s | 6,437,547 bytes |
-| Single | `samtools import` | 0.4817 s | 1.0958 s | 11,158,869 bytes |
-| Paired | `rsomics-bam import` | 0.5917 s | 2.1525 s | 6,737,920 bytes |
-| Paired | `samtools import` | 0.8475 s | 2.1142 s | 11,149,312 bytes |
+| Single | `rsomics-bam import` | 0.3150 s | 1.0292 s | 6,393,856 bytes |
+| Single | `samtools import` | 0.5200 s | 1.0017 s | 11,057,835 bytes |
+| Paired | `rsomics-bam import` | 0.6133 s | 1.9917 s | 6,703,787 bytes |
+| Paired | `samtools import` | 0.8825 s | 1.9783 s | 11,182,080 bytes |
 
-The rsomics single-input path reduced mean wall time by 41.18% and mean peak
-RSS by 42.31%, winning all 12 pairs. Its paired mean difference was -0.1983
-seconds with a 0.1103-second sample standard deviation and a -6.23 paired
-t-statistic. The paired-input path reduced mean wall time by 30.19% and mean
-peak RSS by 39.57%, winning 11 of 12 pairs. Its paired mean difference was
--0.2558 seconds with a 0.1417-second standard deviation and a -6.25
-t-statistic. Mean CPU time was 2.28% higher for single input and 1.81% higher
+The rsomics single-input path reduced mean wall time by 39.42% and mean peak
+RSS by 42.18%, winning all 12 pairs. Its paired mean difference was -0.2050
+seconds with a 0.1354-second sample standard deviation and a -5.24 paired
+t-statistic. The paired-input path reduced mean wall time by 30.50% and mean
+peak RSS by 40.05%, winning all 12 pairs. Its paired mean difference was
+-0.2692 seconds with a 0.1147-second standard deviation and a -8.13 paired
+t-statistic. Mean user time was 2.75% higher for single input and 0.67% higher
 for paired input.
 
 The 172,708,525-byte FASTQ inputs had SHA-256 values
@@ -596,13 +596,13 @@ for paired input. The rsomics BAMs were 0.09% and 0.06% larger than the
 corresponding samtools files.
 
 The measured rsomics and samtools binaries had SHA-256 values
-`95fb53971f41c934886dd9aa73145771068b192e2ff6714c15d2c43ecb7ec24a`
+`b3e81cc1945cba86999d37839e44c57c16f100f04dfeb1caece7d03ddb1bfe25`
 and `c265b440b09c4b21d1f25a65963cf907b0d9f9d18caa9382c31104158f89d027`.
 The environment, timing, summary, and paired-statistic artifacts had SHA-256
-values `2d19dbdd8710a763d335059d95d2b8f3634ea11b5ac616e7d5271f6df002eeaf`,
-`f51a96843c19f024930c1598ea395276baa67101455da2186426841185504b01`,
-`ac64aca6e22aaf2e9f99a61b5e93ad9ada5190543431273916c4d48508c6f225`,
-and `e4eec0500596d6989dbd21f52dcd69fed556664680d4f1a5aa969fe2b65aa9e4`.
+values `a73a70cb4ea82ce6fb2e0a6bf5085f747410f0f0034b8d2bf3979f5c3c1fd585`,
+`e4ba48c2f7ce14a1819f3fab02d759606663f0603ca6a6df25b068279b662b20`,
+`e36c65c74f70cb6f4120744cd758c90e4c24b4051a2672f887f1f4ef7dd2061c`,
+and `8e7c71c6499eacbfd64afa7cee86a8e04e07c783a87dd88df2b682bb2610bc38`.
 These results establish the plain FASTQ to BAM hot path with four additional
 workers on this fixture. They do not claim the same advantage for compressed
 input, SAM output, auxiliary-tag extraction, other thread counts, or materially
@@ -686,7 +686,7 @@ import, alternates command order, and rejects any stable-header or complete
 record-stream disagreement:
 
 ```sh
-RSOMICS_COMMIT=daeb509 benchmarks/import-vs-samtools-macos.sh \
+RSOMICS_COMMIT=1df1836 benchmarks/import-vs-samtools-macos.sh \
   target/release/rsomics-bam \
   /path/to/samtools \
   /path/to/reads-1.fq \
