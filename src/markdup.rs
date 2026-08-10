@@ -6,12 +6,13 @@ use std::path::{Path, PathBuf};
 
 use noodles::sam;
 use noodles::sam::header::record::value::map::header::tag as header_tag;
-use rsomics_bamio::raw::RawRecord;
+use rsomics_bamio::raw::{RawRecord, RawRecordEncoder};
 use rsomics_common::{Result, RsomicsError};
 use serde::Serialize;
 
 use self::key::{PairKey, SingleKey};
-use crate::{Program, input, output};
+use crate::hts_quickcheck::{require_bgzf_eof, require_cram_eof};
+use crate::{Program, input, md, output};
 
 const PAIRED: u16 = 0x1;
 const UNMAPPED: u16 = 0x4;
@@ -334,7 +335,13 @@ where
             "markdup maximum read length must be greater than zero".to_owned(),
         ));
     }
-    let mut reader = input::open(input_path, options.reference, 0)?;
+    let named_format = validate_named_input(input_path)?;
+    let input_threads = match named_format {
+        Some(input::Format::Bam) => additional_threads,
+        _ => 0,
+    };
+    let mut reader = input::open(input_path, options.reference, input_threads)?;
+    let input_format = reader.format();
     let header = reader.read_header(input_path)?;
     reject_query_name_order(&header, input_path)?;
     let mut header = header;
@@ -349,7 +356,26 @@ where
     );
     writer.write_header(&header)?;
     let mut marker = Marker::new(&mut writer, &options);
-    reader.visit_owned_raw_records(&header, input_path, |record| marker.process(record))?;
+    if input_format == input::Format::Cram {
+        let mut reference = options
+            .reference
+            .map(md::ReferenceCache::open)
+            .transpose()?;
+        let mut raw_encoder = RawRecordEncoder::new();
+        let mut completed_encoder = RawRecordEncoder::new();
+        reader.visit_records(&header, input_path, |record| {
+            let record = complete_cram_raw(
+                &header,
+                record,
+                reference.as_mut(),
+                &mut raw_encoder,
+                &mut completed_encoder,
+            )?;
+            marker.process(record)
+        })?;
+    } else {
+        reader.visit_owned_raw_records(&header, input_path, |record| marker.process(record))?;
+    }
     let counts = marker.finish()?;
     writer.finish(&header)?;
     Ok(Summary {
@@ -365,6 +391,50 @@ where
         duplicate_single_records: counts.duplicate_single_records,
         additional_threads,
     })
+}
+
+fn complete_cram_raw(
+    header: &sam::Header,
+    record: &dyn sam::alignment::Record,
+    reference: Option<&mut md::ReferenceCache>,
+    raw_encoder: &mut RawRecordEncoder,
+    completed_encoder: &mut RawRecordEncoder,
+) -> Result<RawRecord> {
+    let mut raw = raw_encoder.encode(header, record)?;
+    if raw.flags() & UNMAPPED != 0 {
+        let completed = md::complete(header, record, reference)?;
+        return completed_encoder.encode(header, &completed);
+    }
+    if raw.aux_type(*b"MD").is_some() && raw.aux_type(*b"NM").is_some() {
+        return Ok(raw);
+    }
+    let completed = md::complete(header, record, reference)?;
+    let completed = completed_encoder.encode(header, &completed)?;
+    for tag in [*b"MD", *b"NM"] {
+        if raw.aux_type(tag).is_some() {
+            continue;
+        }
+        if let (Some(type_code), Some(value)) = (completed.aux_type(tag), completed.aux_value(tag))
+        {
+            raw.append_aux(tag, type_code, value)?;
+        }
+    }
+    Ok(raw)
+}
+
+fn validate_named_input(path: &Path) -> Result<Option<input::Format>> {
+    if path == Path::new("-") {
+        return Ok(None);
+    }
+    let format = input::detect_format(path)?;
+    match format {
+        input::Format::Bam | input::Format::Sam if input::is_bgzf(path)? => {
+            require_bgzf_eof(path)?;
+        }
+        input::Format::Cram => require_cram_eof(path)?,
+        input::Format::Bam | input::Format::Sam => {}
+    }
+    Ok(Some(format))
 }
 
 fn reject_query_name_order(header: &sam::Header, path: &Path) -> Result<()> {

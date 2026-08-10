@@ -57,12 +57,16 @@ fn require_equal_args(name: &str, arguments: &[&str]) {
     }
     let directory = tempfile::tempdir().unwrap();
     let input = fixture(name);
-    let ours_path = directory.path().join("ours.bam");
-    let oracle_path = directory.path().join("oracle.bam");
+    require_equal_path(&input, arguments, directory.path());
+}
+
+fn require_equal_path(input: &Path, arguments: &[&str], directory: &Path) {
+    let ours_path = directory.join("ours.bam");
+    let oracle_path = directory.join("oracle.bam");
     let mut ours = binary();
     ours.args(["markdup", "--no-PG"]);
     ours.args(arguments);
-    let ours = ours.arg(&input).arg("-o").arg(&ours_path).output().unwrap();
+    let ours = ours.arg(input).arg("-o").arg(&ours_path).output().unwrap();
     assert!(
         ours.status.success(),
         "{}",
@@ -81,7 +85,47 @@ fn require_equal_args(name: &str, arguments: &[&str]) {
 
     let ours = sam_text(&ours_path);
     let oracle = sam_text(&oracle_path);
-    assert_eq!(ours, oracle);
+    assert_sam_eq(&ours, &oracle);
+}
+
+fn assert_sam_eq(ours: &[u8], oracle: &[u8]) {
+    let ours = std::str::from_utf8(ours).unwrap();
+    let oracle = std::str::from_utf8(oracle).unwrap();
+    let ours_lines: Vec<_> = ours.lines().collect();
+    let oracle_lines: Vec<_> = oracle.lines().collect();
+    assert_eq!(ours_lines.len(), oracle_lines.len(), "SAM line count");
+    for (line_index, (ours, oracle)) in ours_lines.iter().zip(&oracle_lines).enumerate() {
+        if ours == oracle {
+            continue;
+        }
+        let ours_fields: Vec<_> = ours.split('\t').collect();
+        let oracle_fields: Vec<_> = oracle.split('\t').collect();
+        if ours_fields.len() != oracle_fields.len() {
+            let ours_tags: Vec<_> = ours_fields
+                .iter()
+                .skip(11)
+                .map(|field| &field[..2])
+                .collect();
+            let oracle_tags: Vec<_> = oracle_fields
+                .iter()
+                .skip(11)
+                .map(|field| &field[..2])
+                .collect();
+            panic!(
+                "SAM line {} tags differ: ours={ours_tags:?} oracle={oracle_tags:?}",
+                line_index + 1
+            );
+        }
+        for (field_index, (ours, oracle)) in ours_fields.iter().zip(&oracle_fields).enumerate() {
+            assert_eq!(
+                ours,
+                oracle,
+                "SAM line {} field {}",
+                line_index + 1,
+                field_index + 1
+            );
+        }
+    }
 }
 
 fn sam_text(path: &Path) -> Vec<u8> {
@@ -132,4 +176,57 @@ fn sequence_mode_matches_samtools() {
 #[test]
 fn include_fails_matches_samtools() {
     require_equal_args("9_include_fails.sam", &["--mode", "s", "--include-fails"]);
+}
+
+#[test]
+fn bam_input_with_threads_matches_samtools() {
+    if !samtools_available() {
+        return;
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("input.bam");
+    let converted = Command::new("samtools")
+        .args(["view", "-b", "-o"])
+        .arg(&input)
+        .arg(fixture("5_markdup.sam"))
+        .status()
+        .unwrap();
+    assert!(converted.success());
+    require_equal_path(&input, &["-@", "2"], directory.path());
+}
+
+#[test]
+fn cram_input_matches_samtools() {
+    if !samtools_available() {
+        return;
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let reference = directory.path().join("reference.fa");
+    std::fs::write(
+        &reference,
+        format!(">contig_000000000\n{}\n", "N".repeat(11_391)),
+    )
+    .unwrap();
+    assert!(
+        Command::new("samtools")
+            .arg("faidx")
+            .arg(&reference)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let input = directory.path().join("input.cram");
+    let converted = Command::new("samtools")
+        .args(["view", "-C", "-T"])
+        .arg(&reference)
+        .args(["-o", input.to_str().unwrap()])
+        .arg(fixture("5_markdup.sam"))
+        .status()
+        .unwrap();
+    assert!(converted.success());
+    require_equal_path(
+        &input,
+        &["--reference", reference.to_str().unwrap()],
+        directory.path(),
+    );
 }

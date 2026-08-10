@@ -150,4 +150,26 @@ mod tests {
             .is_ok()
         );
     }
+
+    #[test]
+    fn markdup_help_exposes_stable_scope() {
+        let error = rsomics_help::try_parse_from::<Cli, _, _>(["rsomics-bam", "markdup", "--help"])
+            .unwrap_err();
+        let help = error.to_string();
+        for option in [
+            "-r, --remove",
+            "-c, --clear",
+            "--include-fails",
+            "-m, --mode",
+            "-l, --max-read-length",
+            "-@, --threads",
+            "--reference",
+            "--no-pg",
+        ] {
+            assert!(help.contains(option), "missing {option} in {help}");
+        }
+        for excluded in ["--barcode-tag", "--duplicate-count", "--read-groups"] {
+            assert!(!help.contains(excluded), "unexpected {excluded} in {help}");
+        }
+    }
 }

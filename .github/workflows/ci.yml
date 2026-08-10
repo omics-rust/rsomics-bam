@@ -86,5 +86,6 @@ jobs:
           cargo test --locked --test compat -- --ignored
           cargo test --locked --test depth -- --ignored
           cargo test --locked --test fixmate -- --ignored
+          cargo test --locked --test markdup --test markdup_compat
           cargo test --locked --test merge -- --ignored
           cargo test --locked --test sort -- --ignored
