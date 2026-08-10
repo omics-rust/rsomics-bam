@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use noodles::sam::alignment::io::Write as _;
 use noodles::{bam, bgzf, sam};
 use rsomics_bamio::RingBgzfWriter;
-use rsomics_bamio::raw::{self, RecordRef};
+use rsomics_bamio::raw::{self, RawRecord, RecordRef};
 use rsomics_common::{Result, RsomicsError};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -215,6 +215,17 @@ where
             Inner::BamSingle(writer) => raw::write_record_ref(writer.get_mut(), record),
             Inner::BamParallel(writer) => raw::write_record_ref(writer.get_mut(), record),
             Inner::BamParallelLevel(writer) => raw::write_record_ref(writer.get_mut(), record),
+        }
+    }
+
+    pub(crate) fn write_owned_raw_record(&mut self, record: &RawRecord) -> Result<()> {
+        match &mut self.inner {
+            Inner::Sam(_) => Err(RsomicsError::ConfigError(
+                "raw BAM records require BAM output".to_owned(),
+            )),
+            Inner::BamSingle(writer) => raw::write_record(writer.get_mut(), record),
+            Inner::BamParallel(writer) => raw::write_record(writer.get_mut(), record),
+            Inner::BamParallelLevel(writer) => raw::write_record(writer.get_mut(), record),
         }
     }
 

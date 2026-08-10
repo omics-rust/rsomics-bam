@@ -1,5 +1,6 @@
 pub(crate) mod collate;
 pub(crate) mod depth;
+pub(crate) mod fixmate;
 pub(crate) mod flags;
 pub(crate) mod flagstat;
 pub(crate) mod head;

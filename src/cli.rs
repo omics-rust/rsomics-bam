@@ -5,8 +5,8 @@ use rsomics_common::{OutputArgs, Result, ToolMeta, run as run_tool};
 use serde::Serialize;
 
 use crate::{
-    collate, commands, depth, flags, flagstat, head, index, merge, mpileup, quickcheck, samples,
-    sort, view,
+    collate, commands, depth, fixmate, flags, flagstat, head, index, merge, mpileup, quickcheck,
+    samples, sort, view,
 };
 
 const META: ToolMeta = ToolMeta {
@@ -35,6 +35,8 @@ enum Command {
     Collate(commands::collate::Arguments),
     /// Compute read depth at each position
     Depth(commands::depth::Arguments),
+    /// Repair mate fields in name-grouped alignments
+    Fixmate(commands::fixmate::Arguments),
     /// Convert between numeric and symbolic SAM flags
     Flags(commands::flags::Arguments),
     /// Count alignments by SAM flag category
@@ -62,6 +64,7 @@ enum Command {
 pub(crate) enum CommandOutput {
     Collate { summary: collate::Summary },
     Depth { summary: depth::Summary },
+    Fixmate { summary: fixmate::Summary },
     Flags { values: Vec<flags::FlagValue> },
     Flagstat { counts: Box<flagstat::Counts> },
     Head { summary: head::Summary },
@@ -85,6 +88,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
     match cli.command {
         Command::Collate(arguments) => commands::collate::execute(arguments, cli.output.json),
         Command::Depth(arguments) => commands::depth::execute(arguments, cli.output.json),
+        Command::Fixmate(arguments) => commands::fixmate::execute(arguments, cli.output.json),
         Command::Flags(arguments) => commands::flags::execute(arguments, cli.output.json),
         Command::Flagstat(arguments) => commands::flagstat::execute(arguments, cli.output.json),
         Command::Head(arguments) => commands::head::execute(arguments, cli.output.json),

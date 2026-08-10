@@ -1,8 +1,8 @@
 # rsomics-bam
 
 `rsomics-bam` is a single command-line product for SAM, BAM, and CRAM
-inspection, filtering, conversion, validation, collation, sorting, and pileup
-workflows.
+inspection, filtering, conversion, validation, collation, mate repair, sorting,
+and pileup workflows.
 
 ## Install
 
@@ -18,6 +18,7 @@ cargo install rsomics-bam
 | `depth` | Compute one per-input depth column at each position |
 | `flags` | Convert numeric and symbolic SAM flags |
 | `flagstat` | Count records by SAM flag category |
+| `fixmate` | Repair mate fields in name-grouped alignments |
 | `head` | Print alignment headers and leading records as SAM |
 | `index` | Build BAI, CSI, or CRAI random-access indexes |
 | `merge` | Merge ordered alignment files into BAM |
@@ -32,6 +33,7 @@ rsomics-bam view -b -@ 4 -q 20 -o selected.bam input.bam
 rsomics-bam view -c -F UNMAP,SECONDARY input.cram -T reference.fa
 rsomics-bam collate -m 128M -o grouped.bam input.bam
 rsomics-bam depth -a -b targets.bed sample.bam
+rsomics-bam fixmate -m grouped.bam -o fixed.bam
 rsomics-bam index -c -m 14 sample.bam
 rsomics-bam merge lane1.bam lane2.cram --reference reference.fa -o merged.bam
 rsomics-bam mpileup -f reference.fa -Q 20 input.bam
@@ -49,6 +51,10 @@ outputs are committed only after the complete index has been built and parsed.
 groups. Its total record-memory budget and external merge fan-in are bounded;
 the order between groups is intentionally unspecified. Fast-mode filtering and
 early-pair buffering are not yet exposed.
+`fixmate` preserves name-grouped record order while repairing mate coordinates,
+flags, TLEN, MC, and MQ. `-m` adds the mate-score tags consumed by `markdup`.
+Sanitizer selection, template-cigar and base-modification repair, and alternate
+output formats are not yet exposed.
 `merge` accepts named, already ordered SAM, BAM, and CRAM inputs and writes BAM.
 It reconciles reference, read-group, and program records, validates both the
 declared and observed order, and keeps its per-input read-ahead bounded. It

@@ -6,6 +6,8 @@
 pub mod collate;
 /// Per-position alignment depth.
 pub mod depth;
+/// Mate-field repair for name-grouped alignments.
+pub mod fixmate;
 /// SAM flag parsing and rendering.
 pub mod flags;
 /// Alignment flag statistics.
