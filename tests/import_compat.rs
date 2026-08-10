@@ -194,3 +194,21 @@ fn import_bam_gzip_and_stdin_match_samtools_1_24() {
     );
     assert_eq!(stable_sam(&ours.stdout), stable_sam(&oracle.stdout));
 }
+
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn import_rejects_non_iupac_fastq_like_samtools_1_24() {
+    for name in ["import-unknown.fastq", "import-equals.fastq"] {
+        let input = fixture(name);
+        let ours = binary()
+            .args(["import", input.to_str().unwrap(), "--no-PG"])
+            .output()
+            .unwrap();
+        let oracle = samtools()
+            .args(["import", input.to_str().unwrap(), "--no-PG"])
+            .output()
+            .unwrap();
+        assert!(!ours.status.success(), "rsomics accepted {name}");
+        assert!(!oracle.status.success(), "samtools accepted {name}");
+    }
+}

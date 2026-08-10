@@ -356,8 +356,12 @@ fn build_sam_record(
 
     let sequence = sequence
         .iter()
-        .map(|base| BASES[usize::from(nt16(*base))])
-        .collect::<Vec<_>>();
+        .copied()
+        .enumerate()
+        .map(|(position, base)| {
+            fastq_nt16(base, name, position).map(|code| BASES[usize::from(code)])
+        })
+        .collect::<Result<Vec<_>>>()?;
     let scores = quality.iter().map(|score| score - 33).collect::<Vec<_>>();
     Ok(sam::alignment::RecordBuf::builder()
         .set_name(name.to_vec())
@@ -416,9 +420,14 @@ fn encode_bam_payload(
     output.extend_from_slice(name);
     output.push(0);
 
-    for pair in sequence.chunks(2) {
-        let high = nt16(pair[0]) << 4;
-        let low = pair.get(1).copied().map_or(0, nt16);
+    let mut bases = sequence.iter().copied().enumerate();
+    while let Some((position, first)) = bases.next() {
+        let high = fastq_nt16(first, name, position)? << 4;
+        let low = bases
+            .next()
+            .map(|(position, base)| fastq_nt16(base, name, position))
+            .transpose()?
+            .unwrap_or_default();
         output.push(high | low);
     }
     output.extend(quality.iter().map(|score| score - 33));
@@ -464,6 +473,18 @@ fn nt16(base: u8) -> u8 {
         b'B' | b'b' => 14,
         _ => 15,
     }
+}
+
+fn fastq_nt16(base: u8, name: &[u8], position: usize) -> Result<u8> {
+    let code = nt16(base);
+    if base == b'=' || (code == 15 && !matches!(base, b'N' | b'n')) {
+        return Err(RsomicsError::InvalidInput(format!(
+            "read {} has invalid FASTQ base 0x{base:02x} at position {}",
+            String::from_utf8_lossy(name),
+            position + 1
+        )));
+    }
+    Ok(code)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

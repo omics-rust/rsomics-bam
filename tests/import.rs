@@ -271,6 +271,20 @@ fn order_tag_cannot_replace_the_read_group_tag() {
 }
 
 #[test]
+fn non_iupac_fastq_bases_are_rejected() {
+    for name in ["import-unknown.fastq", "import-equals.fastq"] {
+        let input = fixture(name);
+        let output = run(&["import", input.to_str().unwrap(), "--no-PG"]);
+        assert!(!output.status.success(), "accepted {name}");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("invalid FASTQ base"),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
 fn mixed_explicit_and_positional_inputs_are_rejected() {
     let input = fixture("import-se.fastq");
     let output = run(&[
