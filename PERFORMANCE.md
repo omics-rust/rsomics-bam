@@ -626,6 +626,64 @@ SHA-256 values `b3a74cf2ac8815237013ca55b9d2c3c466d5f651fb1abd92c749d02a714d7e37
 and `2a07f119149d2b36ca6415b0735a35bb0cb1ff9fbbf34506d3933b85e8f70f64`.
 The installed binary also rejects non-IUPAC FASTQ input with a nonzero exit.
 
+## Read-group editing benchmark
+
+The 2026-08-10 `addreplacerg` gate used implementation revision
+`033a7fa6c274` and benchmark revision `07bd58c7fd37` with samtools/HTSlib 1.24
+on an Apple M2 Mac mini with 8 GiB of memory. The 99,545,915-byte BAM contained
+4,000,260 records: 2,000,130 with `RG:Z:old` and 2,000,130 without an `RG`
+field. Both tools used four additional workers and omitted program records.
+Twelve timed pairs alternated command order after one warm-up for each mode.
+
+```text
+rsomics-bam addreplacerg -r 'ID:new\tSM:after' -m overwrite_all --no-PG -@ 4 -o ours.bam input.bam
+samtools addreplacerg -r 'ID:new\tSM:after' -m overwrite_all --no-PG -@ 4 -o samtools.bam input.bam
+
+rsomics-bam addreplacerg -r 'ID:new\tSM:after' -m orphan_only --no-PG -@ 4 -o ours.bam input.bam
+samtools addreplacerg -r 'ID:new\tSM:after' -m orphan_only --no-PG -@ 4 -o samtools.bam input.bam
+```
+
+| Mode | Tool | Mean wall time | Mean user time | Mean peak RSS |
+|---|---|---:|---:|---:|
+| Overwrite all | `rsomics-bam addreplacerg` | 1.8125 s | 6.9592 s | 7,012,352 bytes |
+| Overwrite all | `samtools addreplacerg` | 2.4600 s | 7.4167 s | 12,626,603 bytes |
+| Orphan only | `rsomics-bam addreplacerg` | 1.7692 s | 6.9275 s | 6,985,045 bytes |
+| Orphan only | `samtools addreplacerg` | 2.4825 s | 7.3633 s | 12,749,483 bytes |
+
+The overwrite path reduced mean wall time by 26.32% and mean peak RSS by
+44.46%, winning all 12 pairs. Its paired mean difference was -0.6475 seconds
+with a 0.1567-second sample standard deviation and a -14.31 paired
+t-statistic. The orphan path reduced mean wall time by 28.73% and mean peak
+RSS by 45.21%, also winning all 12 pairs. Its paired mean difference was
+-0.7133 seconds with a 0.2596-second standard deviation and a -9.52 paired
+t-statistic.
+
+Every warm-up and timed output decoded completely. Within-header `@SQ` and
+`@RG` order and all field values matched. Cross-type placement of `@CO` was
+normalized because noodles serializes header record types canonically while
+samtools appends a new `@RG` after existing comments. Complete order-sensitive
+record streams matched at
+`8d5dfae4ee1e5db4cbb9be43ea9a6c73ccaff5fccbc5c3648e2c4c2d74bffb56`
+for overwrite mode and
+`0bab95e6775fec54b24fd81ca9eac4f058419bddc20c6243148a2561704e1008`
+for orphan mode. The normalized header hashes were
+`ad51c33f58087415558e256885d678787f69faa7bec5e8864fda5b058e3cd34c`
+and `e36570e85d1f6ec14a052517237c0a9b410f7e25dbf11cb10f22b74481772c13`.
+
+The input SHA-256 was
+`9f82e1faae07d53bf916689828146c6923714d08a29078df726d00284363b1b3`.
+The measured rsomics and samtools binaries had SHA-256 values
+`f61522baf7b7cffdb2527dcbcd348308c046decc3a56141e41494797d86e9bde`
+and `c265b440b09c4b21d1f25a65963cf907b0d9f9d18caa9382c31104158f89d027`.
+The environment, timing, summary, and paired-statistic artifacts had SHA-256
+values `7fc0b00caadfdb45d92c6a5ede740925701320bd8769f56656b587ea84f3b7d9`,
+`82ddfc4d2b5ff7e7684c7efa4166cd693db86c74152aeb7cc3a3b7299212e96c`,
+`03fc68b1f42b49677de717d5d312d85f04aad1b2211fa30bbdf0f89191511a6b`,
+and `7de316099404a55150ea709e580a4eb3bedfa4a42b6da26ae1694a047f8cf381`.
+These claims cover the measured mixed-tag BAM-to-BAM path with four additional
+workers. They do not claim the same advantage for SAM or CRAM input, SAM
+output, other thread counts, or materially different auxiliary-field layouts.
+
 ## Reproduction
 
 `benchmarks/view-vs-samtools.sh` records the machine, tool versions, binary and
@@ -711,6 +769,19 @@ RSOMICS_COMMIT=1df1836 benchmarks/import-vs-samtools-macos.sh \
   /path/to/reads-2.fq \
   /path/to/results \
   12 4
+```
+
+`benchmarks/addreplacerg-vs-samtools-macos.sh` compares overwrite and orphan
+read-group editing, alternates command order, and rejects any normalized-header
+or complete record-stream disagreement:
+
+```sh
+RSOMICS_COMMIT=07bd58c benchmarks/addreplacerg-vs-samtools-macos.sh \
+  target/release/rsomics-bam \
+  /path/to/samtools \
+  /path/to/mixed-read-group.bam \
+  /path/to/results \
+  12 4 'ID:new\tSM:after'
 ```
 
 `benchmarks/file-operations-vs-samtools-macos.sh` compares either BAM
