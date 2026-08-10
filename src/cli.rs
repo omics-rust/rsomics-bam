@@ -48,6 +48,8 @@ enum Command {
     Collate(commands::collate::Arguments),
     /// Summarize coverage by reference sequence
     Coverage(commands::coverage::Arguments),
+    /// Report CRAM data-series storage by block
+    CramSize(commands::cram_size::Arguments),
     /// Compute read depth at each position
     Depth(commands::depth::Arguments),
     /// Convert padded-reference alignments to unpadded coordinates
@@ -99,6 +101,7 @@ pub(crate) enum CommandOutput {
     Cat { summary: cat::Summary },
     Collate { summary: collate::Summary },
     Coverage { report: coverage::Report },
+    CramSize { report: crate::cram_size::Report },
     Depth { summary: depth::Summary },
     Depad { summary: depad::Summary },
     Fixmate { summary: fixmate::Summary },
@@ -143,6 +146,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Cat(arguments) => commands::cat::execute(arguments, cli.output.json),
         Command::Collate(arguments) => commands::collate::execute(arguments, cli.output.json),
         Command::Coverage(arguments) => commands::coverage::execute(arguments, cli.output.json),
+        Command::CramSize(arguments) => commands::cram_size::execute(arguments, cli.output.json),
         Command::Depth(arguments) => commands::depth::execute(arguments, cli.output.json),
         Command::Depad(arguments) => commands::depad::execute(arguments, cli.output.json),
         Command::Fixmate(arguments) => commands::fixmate::execute(arguments, cli.output.json),
@@ -174,6 +178,17 @@ mod tests {
     #[test]
     fn command_tree_is_valid() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn cram_size_help_exposes_the_complete_diagnostic_surface() {
+        let help =
+            rsomics_help::try_parse_from::<Cli, _, _>(["rsomics-bam", "cram-size", "--help"])
+                .unwrap_err()
+                .to_string();
+        for option in ["-o, --output", "-v, --verbose", "-e, --encodings"] {
+            assert!(help.contains(option), "missing {option} in {help}");
+        }
     }
 
     #[test]

@@ -6,6 +6,7 @@ pub(crate) mod calmd;
 pub(crate) mod cat;
 pub(crate) mod collate;
 pub(crate) mod coverage;
+pub(crate) mod cram_size;
 pub(crate) mod depad;
 pub(crate) mod depth;
 pub(crate) mod fastx;

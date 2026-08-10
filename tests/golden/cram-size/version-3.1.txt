@@ -1,0 +1,14 @@
+#   Content_ID  Uncomp.size    Comp.size   Ratio Method  Data_series
+BLOCK     CORE            0            0 100.00% .      
+BLOCK       11           21           21 100.00% .       RN
+BLOCK       12           17            6  35.29% 2.      QS
+BLOCK       15            3            3 100.00% .       BF
+BLOCK       16            2            2 100.00% .       CF
+BLOCK       17            2            2 100.00% .       AP
+
+Number of containers                   2
+Number of slices                       2
+Number of sequences                    3
+Number of bases                       17
+Total file size                     1141
+Format overhead size                1107

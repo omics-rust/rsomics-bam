@@ -19,6 +19,8 @@ pub mod collate;
 /// Per-reference alignment coverage summaries.
 pub mod coverage;
 mod coverage_hts;
+/// CRAM physical-storage diagnostics.
+pub mod cram_size;
 /// Padded-reference alignment projection.
 pub mod depad;
 /// Per-position alignment depth.

@@ -23,6 +23,7 @@ cargo install rsomics-bam
 | `cat` | Concatenate BAM files without reencoding alignment blocks |
 | `collate` | Group all alignments for each read name with bounded memory |
 | `coverage` | Summarize reads, breadth, depth, and quality by reference |
+| `cram-size` | Report CRAM storage by content ID, codec, and data series |
 | `depad` | Project padded-reference alignments into unpadded coordinates |
 | `depth` | Compute one per-input depth column at each position |
 | `flags` | Convert numeric and symbolic SAM flags |
@@ -54,6 +55,7 @@ rsomics-bam calmd -b -o recalculated.bam input.bam reference.fa
 rsomics-bam cat lane1.bam lane2.bam -o combined.bam
 rsomics-bam collate -m 128M -o grouped.bam input.bam
 rsomics-bam coverage -q 20 -Q 20 sample.bam
+rsomics-bam cram-size -e sample.cram
 rsomics-bam depad -T padded.fa -@ 4 -o unpadded.bam padded.bam
 rsomics-bam depth -a -b targets.bed sample.bam
 rsomics-bam fastq -o reads.fq.bgzf name-sorted.bam
@@ -70,6 +72,11 @@ rsomics-bam sort -m 768M -o sorted.bam input.bam
 
 The commands accept SAM, BAM, and CRAM where their help declares those input
 formats. `view` writes SAM or BAM; CRAM output is intentionally unavailable.
+`cram-size` accepts CRAM 2.1, 3.0, and 3.1 from a file or standard input and
+reports physical block sizes without decoding alignment records. Default,
+verbose, and encoding-map output match samtools 1.24. Named output is
+transactional; `--json` writes the compatibility report to a named file and
+returns the typed report through the shared envelope.
 Indexed region queries require a usable BAI, CSI, or CRAI. A non-zero thread
 request for CRAM decoding fails explicitly because the current decoder does
 not provide ordered parallel decoding. `index` uses up to four additional

@@ -1,0 +1,53 @@
+Container encodings
+	RN	BYTE_ARRAY_STOP(stop=0,id=11)
+	QS	EXTERNAL(id=12)
+	IN	BYTE_ARRAY_STOP(stop=0,id=13)
+	SC	BYTE_ARRAY_STOP(stop=0,id=14)
+	BF	EXTERNAL(id=15)
+	CF	EXTERNAL(id=16)
+	AP	EXTERNAL(id=17)
+	RG	HUFFMAN(codes={0},lengths={0})
+	MQ	HUFFMAN(codes={60},lengths={0})
+	TS	HUFFMAN(codes={-24},lengths={0})
+	NP	HUFFMAN(codes={1},lengths={0})
+	NF	HUFFMAN(codes={0},lengths={0})
+	RL	HUFFMAN(codes={8},lengths={0})
+	FN	HUFFMAN(codes={0},lengths={0})
+	TL	HUFFMAN(codes={0},lengths={0})
+	RI	HUFFMAN(codes={0},lengths={0})
+	BB	BYTE_ARRAY_LEN(len_codec={EXTERNAL(id=42)},val_codec={EXTERNAL(id=37)}
+
+Container encodings
+	RN	BYTE_ARRAY_STOP(stop=0,id=11)
+	QS	EXTERNAL(id=12)
+	IN	BYTE_ARRAY_STOP(stop=0,id=13)
+	SC	BYTE_ARRAY_STOP(stop=0,id=14)
+	BF	HUFFMAN(codes={4},lengths={0})
+	CF	HUFFMAN(codes={3},lengths={0})
+	AP	HUFFMAN(codes={0},lengths={0})
+	RG	HUFFMAN(codes={-1},lengths={0})
+	MQ	HUFFMAN(codes={0},lengths={0})
+	NS	HUFFMAN(codes={-1},lengths={0})
+	MF	HUFFMAN(codes={0},lengths={0})
+	TS	HUFFMAN(codes={0},lengths={0})
+	NP	HUFFMAN(codes={0},lengths={0})
+	RL	HUFFMAN(codes={1},lengths={0})
+	BA	HUFFMAN(codes={78},lengths={0})
+	TL	HUFFMAN(codes={0},lengths={0})
+	RI	HUFFMAN(codes={-1},lengths={0})
+	BB	BYTE_ARRAY_LEN(len_codec={EXTERNAL(id=42)},val_codec={EXTERNAL(id=37)}
+
+#   Content_ID  Uncomp.size    Comp.size   Ratio Method  Data_series
+BLOCK     CORE            0            0 100.00% .      
+BLOCK       11           21           21 100.00% .       RN
+BLOCK       12           17            6  35.29% 2.      QS
+BLOCK       15            3            3 100.00% .       BF
+BLOCK       16            2            2 100.00% .       CF
+BLOCK       17            2            2 100.00% .       AP
+
+Number of containers                   2
+Number of slices                       2
+Number of sequences                    3
+Number of bases                       17
+Total file size                     1141
+Format overhead size                1107
