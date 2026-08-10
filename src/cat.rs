@@ -8,7 +8,7 @@ use serde::Serialize;
 use crate::output::same_target;
 use crate::{Program, bgzf_rewrite, header_source, hts_quickcheck, input};
 
-const OUTPUT_BUFFER: usize = 2 * 1024 * 1024;
+const OUTPUT_BUFFER: usize = 4 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Options<'a> {
