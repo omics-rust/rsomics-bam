@@ -20,6 +20,7 @@ const READ1: u16 = 0x40;
 const READ2: u16 = 0x80;
 const UNMAPPED_BIN: u16 = 4680;
 const BASES: &[u8; 16] = b"=ACMGRSVTWYHKDBN";
+const INVALID_BASE: u8 = u8::MAX;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Inputs<'a> {
@@ -354,20 +355,20 @@ fn build_sam_record(
         }
     }
 
-    let sequence = sequence
-        .iter()
-        .copied()
-        .enumerate()
-        .map(|(position, base)| {
-            fastq_nt16(base, name, position).map(|code| BASES[usize::from(code)])
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let mut normalized_sequence = Vec::with_capacity(sequence.len());
+    for (position, &base) in sequence.iter().enumerate() {
+        let code = fastq_nt16(base);
+        if code == INVALID_BASE {
+            return Err(invalid_base(name, base, position));
+        }
+        normalized_sequence.push(BASES[usize::from(code)]);
+    }
     let scores = quality.iter().map(|score| score - 33).collect::<Vec<_>>();
     Ok(sam::alignment::RecordBuf::builder()
         .set_name(name.to_vec())
         .set_flags(Flags::from(flags))
         .set_mapping_quality(MappingQuality::new(0).expect("zero is a valid mapping quality"))
-        .set_sequence(Sequence::from(sequence))
+        .set_sequence(Sequence::from(normalized_sequence))
         .set_quality_scores(QualityScores::from(scores))
         .set_data(data)
         .build())
@@ -420,15 +421,20 @@ fn encode_bam_payload(
     output.extend_from_slice(name);
     output.push(0);
 
-    let mut bases = sequence.iter().copied().enumerate();
-    while let Some((position, first)) = bases.next() {
-        let high = fastq_nt16(first, name, position)? << 4;
-        let low = bases
-            .next()
-            .map(|(position, base)| fastq_nt16(base, name, position))
-            .transpose()?
-            .unwrap_or_default();
-        output.push(high | low);
+    let mut encoded_bases = 0;
+    for pair in sequence.chunks(2) {
+        let high = fastq_nt16(pair[0]);
+        let low = pair.get(1).copied().map_or(0, fastq_nt16);
+        encoded_bases |= high | low;
+        output.push((high << 4) | low);
+    }
+    if encoded_bases > 15 {
+        let (position, &base) = sequence
+            .iter()
+            .enumerate()
+            .find(|(_, base)| fastq_nt16(**base) == INVALID_BASE)
+            .expect("encoded bases reported an invalid input");
+        return Err(invalid_base(name, base, position));
     }
     output.extend(quality.iter().map(|score| score - 33));
     if let Some(id) = read_group_id {
@@ -454,9 +460,9 @@ fn append_string_tag(output: &mut Vec<u8>, tag: [u8; 2], value: &[u8]) {
     output.push(0);
 }
 
-fn nt16(base: u8) -> u8 {
+#[inline]
+fn fastq_nt16(base: u8) -> u8 {
     match base {
-        b'=' => 0,
         b'A' | b'a' => 1,
         b'C' | b'c' => 2,
         b'M' | b'm' => 3,
@@ -471,20 +477,18 @@ fn nt16(base: u8) -> u8 {
         b'K' | b'k' => 12,
         b'D' | b'd' => 13,
         b'B' | b'b' => 14,
-        _ => 15,
+        b'N' | b'n' => 15,
+        _ => INVALID_BASE,
     }
 }
 
-fn fastq_nt16(base: u8, name: &[u8], position: usize) -> Result<u8> {
-    let code = nt16(base);
-    if base == b'=' || (code == 15 && !matches!(base, b'N' | b'n')) {
-        return Err(RsomicsError::InvalidInput(format!(
-            "read {} has invalid FASTQ base 0x{base:02x} at position {}",
-            String::from_utf8_lossy(name),
-            position + 1
-        )));
-    }
-    Ok(code)
+#[cold]
+fn invalid_base(name: &[u8], base: u8, position: usize) -> RsomicsError {
+    RsomicsError::InvalidInput(format!(
+        "read {} has invalid FASTQ base 0x{base:02x} at position {}",
+        String::from_utf8_lossy(name),
+        position + 1
+    ))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
