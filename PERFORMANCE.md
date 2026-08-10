@@ -534,6 +534,20 @@ the four-million-record reheader smoke matched at
 `8bc5ca00000bfa575068de363b70bf3224cbebb3919519b58e2e01f410a19a15`.
 docs.rs serves the corresponding library documentation.
 
+Release 0.13.0 was published from revision
+`4829bbb3be06fddc0b13a2ede2cf72279044976e` after exact-head CI
+`31376119277` passed on native Linux and macOS for x86_64 and aarch64. The
+Linux x86_64 gate built samtools 1.24 and exercised the FASTA/FASTQ oracle for
+SAM, BAM, CRAM, standard input, filtering, naming, and quality modes.
+Publication workflow `31376581939` produced an unyanked 151,519-byte registry
+archive with SHA-256
+`97cc23593d5b92a7f3c49c19ab9b9c014e466ecc37e12e392b07ccaac27cf056`;
+its VCS metadata identifies the exact release revision. A fresh registry
+install reports 0.13.0 and exposes both commands through the shared help tree.
+Installed FASTA and decompressed BGZF FASTQ smoke streams match samtools 1.24
+at `a69efdbf4ebf740457c7df6e52112d1a56b63c388ad493c2a0f9ffbc0f8e61f8`
+and `ca6ae968349466db34aa481149c0fc005689a3595cc3a3f8627139316754d733`.
+
 ## Reproduction
 
 `benchmarks/view-vs-samtools.sh` records the machine, tool versions, binary and
