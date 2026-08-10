@@ -1009,9 +1009,7 @@ for rsomics and
 `c265b440b09c4b21d1f25a65963cf907b0d9f9d18caa9382c31104158f89d027`
 for samtools.
 
-The retained artifacts are under
-`/Volumes/Zane's HDD/rsomics-fixtures/bam/cram-size-1m-complex-20260811/exact-74c7a7f`.
-The environment, timing ledger, summary, and output-digest file have SHA-256
+The retained environment, timing ledger, summary, and output-digest file have SHA-256
 values `136a8d3deca43fc072748b537f60df981eeb4d6bab0d10f58f5c2fb466f2b8cf`,
 `591cbbf18d290b0417bb8a461b53edb665728cc018f2b66153a714c177a2098e`,
 `9728232c1eefd6a96bc7dbb7430c616e17e00e71e1b9829c2ff81e29fa099494`,
