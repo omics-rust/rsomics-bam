@@ -83,6 +83,7 @@ jobs:
         if: matrix.target == 'linux-x86_64'
         run: |
           cargo test --locked --test collate -- --ignored
+          cargo test --locked --test cat_reheader_compat
           cargo test --locked --test compat -- --ignored
           cargo test --locked --test depth -- --ignored
           cargo test --locked --test fixmate -- --ignored
