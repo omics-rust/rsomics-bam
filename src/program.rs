@@ -41,7 +41,7 @@ impl<'a> Program<'a> {
         })
     }
 
-    pub(crate) fn add_to(self, header: &mut sam::Header) -> Result<()> {
+    pub(crate) fn add_to(self, header: &mut sam::Header) -> Result<Vec<u8>> {
         let programs = header.programs_mut().as_mut();
         let previous = programs.last().map(|(id, _)| id.clone());
         let mut id = self.name.to_owned();
@@ -64,8 +64,9 @@ impl<'a> Program<'a> {
         let map = builder.build().map_err(|error| {
             RsomicsError::InvalidInput(format!("building program record: {error}"))
         })?;
-        programs.insert(id.into(), map);
-        Ok(())
+        let id = id.into_bytes();
+        programs.insert(id.clone().into(), map);
+        Ok(id)
     }
 }
 

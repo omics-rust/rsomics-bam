@@ -2,6 +2,8 @@
 
 //! Programmatic interfaces for the rsomics SAM, BAM, and CRAM product.
 
+/// Compressed-block BAM concatenation.
+pub mod cat;
 /// Bounded-memory read-name collation.
 pub mod collate;
 /// Per-position alignment depth.
@@ -26,6 +28,8 @@ pub mod mpileup;
 mod program;
 /// Alignment integrity checks.
 pub mod quickcheck;
+/// Compressed-block BAM header replacement.
+pub mod reheader;
 /// Read-group sample metadata.
 pub mod samples;
 /// Bounded-memory alignment sorting.
@@ -36,10 +40,12 @@ pub mod view;
 pub use program::Program;
 
 mod alignment_order;
+mod bgzf_rewrite;
 mod cli;
 mod commands;
 mod filter;
 mod header_merge;
+mod header_source;
 mod hts_metadata;
 mod hts_quickcheck;
 mod input;

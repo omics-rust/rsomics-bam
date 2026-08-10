@@ -1,3 +1,4 @@
+pub(crate) mod cat;
 pub(crate) mod collate;
 pub(crate) mod depth;
 pub(crate) mod fixmate;
@@ -9,6 +10,7 @@ pub(crate) mod markdup;
 pub(crate) mod merge;
 pub(crate) mod mpileup;
 pub(crate) mod quickcheck;
+pub(crate) mod reheader;
 pub(crate) mod samples;
 pub(crate) mod sort;
 pub(crate) mod view;

@@ -1082,6 +1082,7 @@ name = "rsomics-bam"
 version = "0.11.0"
 dependencies = [
  "clap",
+ "flate2",
  "itoa",
  "noodles",
  "noodles-bgzf",
