@@ -1,4 +1,4 @@
-use std::io::{BufWriter, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use rsomics_common::{Result, RsomicsError};
@@ -6,8 +6,6 @@ use serde::Serialize;
 
 use crate::output::same_target;
 use crate::{Program, bgzf_rewrite, header_source, hts_quickcheck, input};
-
-const OUTPUT_BUFFER: usize = 2 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Options<'a> {
@@ -27,7 +25,7 @@ pub fn write<W: Write>(
     header_source: &Path,
     bam: &Path,
     options: Options<'_>,
-    output: W,
+    mut output: W,
 ) -> Result<Summary> {
     if bam == Path::new("-") {
         return Err(RsomicsError::ConfigError(
@@ -74,7 +72,6 @@ pub fn write<W: Write>(
         header_source::append_line(&mut text, line);
     }
 
-    let mut output = BufWriter::with_capacity(OUTPUT_BUFFER, output);
     bgzf_rewrite::write_header(&mut output, &replacement, &text)?;
     bgzf_rewrite::copy_records(bam, &mut output)?;
     bgzf_rewrite::finish(&mut output)?;

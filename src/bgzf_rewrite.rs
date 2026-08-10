@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{self, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
 
 use noodles::{bam, bgzf, sam};
@@ -16,6 +16,11 @@ const MAX_FRAME_SIZE: usize = 1 << 16;
 #[derive(Debug)]
 struct Frame {
     data: Vec<u8>,
+    payload_start: usize,
+    uncompressed_size: usize,
+}
+
+struct FrameLayout {
     payload_start: usize,
     uncompressed_size: usize,
 }
@@ -87,26 +92,7 @@ pub(crate) fn copy_records<W: Write>(path: &Path, output: &mut W) -> Result<()> 
         ..
     } = open_at_records(path)?;
     write_encoded(output, &boundary)?;
-
-    loop {
-        let frame = read_frame(&mut reader)?.ok_or_else(|| {
-            RsomicsError::InvalidInput(format!(
-                "{}: BGZF end-of-file marker is missing",
-                path.display()
-            ))
-        })?;
-        if frame.data == EOF {
-            let mut trailing = [0; 1];
-            if reader.read(&mut trailing).map_err(RsomicsError::Io)? != 0 {
-                return Err(RsomicsError::InvalidInput(format!(
-                    "{}: data follows the BGZF end-of-file marker",
-                    path.display()
-                )));
-            }
-            return Ok(());
-        }
-        output.write_all(&frame.data).map_err(RsomicsError::Io)?;
-    }
+    copy_frames(path, &mut reader, output)
 }
 
 pub(crate) fn finish<W: Write>(output: &mut W) -> Result<()> {
@@ -220,38 +206,52 @@ impl<R: Read> Read for HeaderStream<R> {
 }
 
 fn read_frame<R: Read>(reader: &mut R) -> Result<Option<Frame>> {
-    let mut fixed = [0; 12];
+    let mut data = Vec::with_capacity(MAX_FRAME_SIZE);
+    let Some(layout) = read_frame_into(reader, &mut data)? else {
+        return Ok(None);
+    };
+    Ok(Some(Frame {
+        data,
+        payload_start: layout.payload_start,
+        uncompressed_size: layout.uncompressed_size,
+    }))
+}
+
+fn read_frame_into<R: Read>(reader: &mut R, data: &mut Vec<u8>) -> Result<Option<FrameLayout>> {
+    data.clear();
+    data.resize(12, 0);
     loop {
-        match reader.read(&mut fixed[..1]) {
-            Ok(0) => return Ok(None),
+        match reader.read(&mut data[..1]) {
+            Ok(0) => {
+                data.clear();
+                return Ok(None);
+            }
             Ok(_) => break,
             Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
             Err(error) => return Err(RsomicsError::Io(error)),
         }
     }
-    reader
-        .read_exact(&mut fixed[1..])
-        .map_err(truncated_frame)?;
-    if fixed[..3] != [0x1f, 0x8b, 0x08] || fixed[3] != 0x04 {
+    reader.read_exact(&mut data[1..]).map_err(truncated_frame)?;
+    if data[..3] != [0x1f, 0x8b, 0x08] || data[3] != 0x04 {
         return Err(RsomicsError::InvalidInput(
             "invalid BGZF gzip header".to_owned(),
         ));
     }
 
-    let extra_len = usize::from(u16::from_le_bytes([fixed[10], fixed[11]]));
-    let mut extra = vec![0; extra_len];
-    reader.read_exact(&mut extra).map_err(truncated_frame)?;
-    let block_size = parse_block_size(&extra)?;
-    let header_size = fixed.len() + extra.len();
+    let extra_len = usize::from(u16::from_le_bytes([data[10], data[11]]));
+    let extra_end = 12 + extra_len;
+    data.resize(extra_end, 0);
+    reader
+        .read_exact(&mut data[12..extra_end])
+        .map_err(truncated_frame)?;
+    let block_size = parse_block_size(&data[12..extra_end])?;
+    let header_size = extra_end;
     if !(header_size + 8..=MAX_FRAME_SIZE).contains(&block_size) {
         return Err(RsomicsError::InvalidInput(
             "invalid BGZF frame size".to_owned(),
         ));
     }
 
-    let mut data = Vec::with_capacity(block_size);
-    data.extend_from_slice(&fixed);
-    data.extend_from_slice(&extra);
     data.resize(block_size, 0);
     reader
         .read_exact(&mut data[header_size..])
@@ -263,11 +263,147 @@ fn read_frame<R: Read>(reader: &mut R) -> Result<Option<Frame>> {
             "invalid BGZF uncompressed size".to_owned(),
         ));
     }
-    Ok(Some(Frame {
-        data,
+    Ok(Some(FrameLayout {
         payload_start: header_size,
         uncompressed_size,
     }))
+}
+
+fn copy_frames<W: Write>(path: &Path, reader: &mut BufReader<File>, output: &mut W) -> Result<()> {
+    let mut partial = Vec::with_capacity(MAX_FRAME_SIZE);
+    loop {
+        let buffer = reader.fill_buf().map_err(RsomicsError::Io)?;
+        if buffer.is_empty() {
+            return Err(RsomicsError::InvalidInput(format!(
+                "{}: BGZF end-of-file marker is missing",
+                path.display()
+            )));
+        }
+
+        let mut offset = 0;
+        let mut eof = None;
+        while offset < buffer.len() {
+            let Some(size) = complete_frame_size(&buffer[offset..])? else {
+                break;
+            };
+            if buffer[offset..offset + size] == EOF {
+                eof = Some(offset + size);
+                break;
+            }
+            offset += size;
+        }
+
+        if let Some(end) = eof {
+            output
+                .write_all(&buffer[..end - EOF.len()])
+                .map_err(RsomicsError::Io)?;
+            reader.consume(end);
+            let mut trailing = [0; 1];
+            if reader.read(&mut trailing).map_err(RsomicsError::Io)? != 0 {
+                return Err(RsomicsError::InvalidInput(format!(
+                    "{}: data follows the BGZF end-of-file marker",
+                    path.display()
+                )));
+            }
+            return Ok(());
+        }
+
+        if offset > 0 {
+            output
+                .write_all(&buffer[..offset])
+                .map_err(RsomicsError::Io)?;
+            reader.consume(offset);
+            continue;
+        }
+
+        partial.extend_from_slice(buffer);
+        let consumed = buffer.len();
+        reader.consume(consumed);
+        complete_partial_frame(reader, &mut partial)?;
+        if partial == EOF {
+            let mut trailing = [0; 1];
+            if reader.read(&mut trailing).map_err(RsomicsError::Io)? != 0 {
+                return Err(RsomicsError::InvalidInput(format!(
+                    "{}: data follows the BGZF end-of-file marker",
+                    path.display()
+                )));
+            }
+            return Ok(());
+        }
+        output.write_all(&partial).map_err(RsomicsError::Io)?;
+        partial.clear();
+    }
+}
+
+fn complete_frame_size(data: &[u8]) -> Result<Option<usize>> {
+    if data.len() < 12 {
+        return Ok(None);
+    }
+    if data[..3] != [0x1f, 0x8b, 0x08] || data[3] != 0x04 {
+        return Err(RsomicsError::InvalidInput(
+            "invalid BGZF gzip header".to_owned(),
+        ));
+    }
+    let extra_len = usize::from(u16::from_le_bytes([data[10], data[11]]));
+    let header_size = 12 + extra_len;
+    if data.len() < header_size {
+        return Ok(None);
+    }
+    let block_size = parse_block_size(&data[12..header_size])?;
+    if !(header_size + 8..=MAX_FRAME_SIZE).contains(&block_size) {
+        return Err(RsomicsError::InvalidInput(
+            "invalid BGZF frame size".to_owned(),
+        ));
+    }
+    if data.len() < block_size {
+        return Ok(None);
+    }
+    let uncompressed_size =
+        u32::from_le_bytes(data[block_size - 4..block_size].try_into().unwrap());
+    if usize::try_from(uncompressed_size).unwrap() > MAX_FRAME_SIZE {
+        return Err(RsomicsError::InvalidInput(
+            "invalid BGZF uncompressed size".to_owned(),
+        ));
+    }
+    Ok(Some(block_size))
+}
+
+fn complete_partial_frame<R: Read>(reader: &mut R, data: &mut Vec<u8>) -> Result<()> {
+    fill_to(reader, data, 12)?;
+    if data[..3] != [0x1f, 0x8b, 0x08] || data[3] != 0x04 {
+        return Err(RsomicsError::InvalidInput(
+            "invalid BGZF gzip header".to_owned(),
+        ));
+    }
+    let extra_len = usize::from(u16::from_le_bytes([data[10], data[11]]));
+    let header_size = 12 + extra_len;
+    fill_to(reader, data, header_size)?;
+    let block_size = parse_block_size(&data[12..header_size])?;
+    if !(header_size + 8..=MAX_FRAME_SIZE).contains(&block_size) {
+        return Err(RsomicsError::InvalidInput(
+            "invalid BGZF frame size".to_owned(),
+        ));
+    }
+    fill_to(reader, data, block_size)?;
+    let uncompressed_size = u32::from_le_bytes(data[block_size - 4..].try_into().unwrap());
+    let uncompressed_size = usize::try_from(uncompressed_size).unwrap();
+    if uncompressed_size > MAX_FRAME_SIZE {
+        return Err(RsomicsError::InvalidInput(
+            "invalid BGZF uncompressed size".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn fill_to<R: Read>(reader: &mut R, data: &mut Vec<u8>, len: usize) -> Result<()> {
+    if data.len() >= len {
+        return Ok(());
+    }
+    let start = data.len();
+    data.resize(len, 0);
+    reader
+        .read_exact(&mut data[start..])
+        .map_err(truncated_frame)
 }
 
 fn decode_frame(frame: &Frame, output: &mut Vec<u8>) -> Result<()> {
@@ -379,5 +515,20 @@ mod tests {
         frame.truncate(frame.len() - 1);
         let error = read_frame(&mut Cursor::new(frame)).unwrap_err();
         assert!(error.to_string().contains("truncated BGZF frame"));
+    }
+
+    #[test]
+    fn frame_copy_handles_reader_boundaries() {
+        let mut expected = Vec::new();
+        write_encoded(&mut expected, &vec![b'a'; 48_000]).unwrap();
+        write_encoded(&mut expected, &vec![b'b'; 48_000]).unwrap();
+        let mut encoded = expected.clone();
+        encoded.extend_from_slice(&EOF);
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(&encoded).unwrap();
+        let mut reader = BufReader::with_capacity(37, file.reopen().unwrap());
+        let mut actual = Vec::new();
+        copy_frames(Path::new("input.bam"), &mut reader, &mut actual).unwrap();
+        assert_eq!(actual, expected);
     }
 }
