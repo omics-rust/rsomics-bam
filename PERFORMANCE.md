@@ -932,7 +932,52 @@ The named-BAM and shared-JSON smoke processed all one million records without
 creating a FASTA sidecar, passed `samtools quickcheck`, and reproduced the
 decoded-output SHA-256 above.
 
+## CRAM storage diagnostic benchmark
+
+The `cram-size` release gate used implementation revision `74c7a7fa8f06`,
+samtools and HTSlib 1.24, and a 14,354,392-byte no-reference CRAM with SHA-256
+`8b37d7ef3e2ac30236bb5b5c4bba27335b1ec2b71356e376db25e7864195d5c0`.
+It contains 100 containers, 100 slices, 1,000,000 sequences, and 150,000,000
+bases. The default reports were byte-identical with SHA-256
+`e430528d73de3086be9032b811243138247d5ecca45f8f2f113b8e42a7570903`.
+The encoding-map reports were also byte-identical.
+
+The machine was an Apple M2 Mac mini with 8 GiB RAM and macOS 26.6.1. One
+warm-up preceded 20 alternating paired rounds. Each timed process executed ten
+complete commands serially and the CPU and wall values below are per command.
+
+| Tool | Mean wall | Median wall | Mean user | Mean system | Mean peak RSS |
+|---|---:|---:|---:|---:|---:|
+| `rsomics-bam 74c7a7f cram-size` | 13.00 ms | 13.00 ms | 8.90 ms | 3.00 ms | 5,512,397 bytes |
+| `samtools 1.24 cram-size` | 9.05 ms | 9.00 ms | 4.05 ms | 3.10 ms | 7,611,187 bytes |
+
+The Rust implementation used 27.58% less mean peak RSS and was 43.65% slower
+by mean wall time. This is a strict resource-use advantage, not a throughput
+claim. The executable SHA-256 values were
+`01907571489b4859d8d00160a0861d80e261b53cd32be57b7238e077d3095ee1`
+for rsomics and
+`c265b440b09c4b21d1f25a65963cf907b0d9f9d18caa9382c31104158f89d027`
+for samtools.
+
+The retained artifacts are under
+`/Volumes/Zane's HDD/rsomics-fixtures/bam/cram-size-1m-complex-20260811/exact-74c7a7f`.
+The environment, timing ledger, summary, and output-digest file have SHA-256
+values `136a8d3deca43fc072748b537f60df981eeb4d6bab0d10f58f5c2fb466f2b8cf`,
+`591cbbf18d290b0417bb8a461b53edb665728cc018f2b66153a714c177a2098e`,
+`9728232c1eefd6a96bc7dbb7430c616e17e00e71e1b9829c2ff81e29fa099494`,
+and `481fb6fe8f02e462a701a9f022fb1c35c239172a546b3301ae44e33bf250287d`.
+
 ## Reproduction
+
+`benchmarks/cram-size-vs-samtools-macos.sh` compares complete reports
+byte-for-byte, batches short runs for timer resolution, alternates command
+order, and records macOS resource usage:
+
+```sh
+RSOMICS_COMMIT=74c7a7f benchmarks/cram-size-vs-samtools-macos.sh \
+  target/release/rsomics-bam /path/to/samtools input.cram \
+  /path/to/results 20 10 default
+```
 
 `benchmarks/depad-vs-samtools-macos.sh` compares padded-reference projection,
 alternates command order, and rejects malformed output or any complete decoded
