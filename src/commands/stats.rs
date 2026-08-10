@@ -224,7 +224,8 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
             split_tag,
             remove_overlaps: arguments.remove_overlaps,
             reference_stats: arguments.reference_stats,
-            reference_stats_chunk: usize::try_from(arguments.reference_stats_chunk.max(1)).unwrap(),
+            reference_stats_chunk_mib: usize::try_from(arguments.reference_stats_chunk.max(1))
+                .unwrap(),
         },
     )?;
     if json {

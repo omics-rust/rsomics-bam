@@ -30,6 +30,16 @@ pub struct CoverageBins {
     pub step: usize,
 }
 
+impl Default for CoverageBins {
+    fn default() -> Self {
+        Self {
+            minimum: 1,
+            maximum: 1000,
+            step: 1,
+        }
+    }
+}
+
 impl CoverageBins {
     fn normalized(self) -> std::result::Result<Self, String> {
         if self.minimum > self.maximum || self.step == 0 {
@@ -119,7 +129,34 @@ pub struct Options<'a> {
     pub split_tag: Option<[u8; 2]>,
     pub remove_overlaps: bool,
     pub reference_stats: bool,
-    pub reference_stats_chunk: usize,
+    pub reference_stats_chunk_mib: usize,
+}
+
+impl Default for Options<'_> {
+    fn default() -> Self {
+        Self {
+            reference: None,
+            additional_threads: 0,
+            required_flags: 0,
+            filtered_flags: 0,
+            read_length: None,
+            coverage: CoverageBins::default(),
+            maximum_insert_size: 8000,
+            insert_bulk: 0.99,
+            trim_quality: 0,
+            gc_depth: 20_000.0,
+            sparse: false,
+            coverage_threshold: 0,
+            targets: None,
+            regions: &[],
+            index: None,
+            id: None,
+            split_tag: None,
+            remove_overlaps: false,
+            reference_stats: false,
+            reference_stats_chunk_mib: 1,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -227,7 +264,7 @@ struct OwnedOptions {
     split_tag: Option<[u8; 2]>,
     remove_overlaps: bool,
     reference_stats: bool,
-    reference_stats_chunk: usize,
+    reference_stats_chunk_mib: usize,
 }
 
 impl OwnedOptions {
@@ -252,7 +289,7 @@ impl OwnedOptions {
             split_tag: self.split_tag,
             remove_overlaps: self.remove_overlaps,
             reference_stats: self.reference_stats,
-            reference_stats_chunk: self.reference_stats_chunk,
+            reference_stats_chunk_mib: self.reference_stats_chunk_mib,
         }
     }
 }
@@ -273,7 +310,7 @@ pub fn collect(path: &Path, mut options: Options<'_>) -> Result<Report> {
         ));
     }
     let reference_chunk = options
-        .reference_stats_chunk
+        .reference_stats_chunk_mib
         .checked_mul(1024 * 1024)
         .ok_or_else(|| RsomicsError::ConfigError("reference chunk size overflows".to_owned()))?;
     let mut reference = options
@@ -477,7 +514,7 @@ pub fn collect(path: &Path, mut options: Options<'_>) -> Result<Report> {
             split_tag: options.split_tag,
             remove_overlaps: options.remove_overlaps,
             reference_stats: options.reference_stats,
-            reference_stats_chunk: options.reference_stats_chunk,
+            reference_stats_chunk_mib: options.reference_stats_chunk_mib,
         },
     })
 }
