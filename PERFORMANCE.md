@@ -684,6 +684,27 @@ These claims cover the measured mixed-tag BAM-to-BAM path with four additional
 workers. They do not claim the same advantage for SAM or CRAM input, SAM
 output, other thread counts, or materially different auxiliary-field layouts.
 
+Release 0.15.0 was published from revision
+`fe2beb388a7565ce064ed430af8b9476b821ced9` after exact-head CI
+`31387911685` passed on native Linux and macOS for x86_64 and aarch64.
+Publication workflow `31388331846` produced an unyanked 171,070-byte registry
+archive with SHA-256
+`79dec6d6cf7deff0a27443539974bec188fba213c7d0e9485059a94ddef61527`;
+its VCS metadata identifies the exact release revision.
+
+A fresh registry install reports 0.15.0 and exposes `addreplacerg` through the
+shared help tree. Its binary SHA-256 is
+`d79af698eda372b22a42f5828ae3c6e5ab8ef118f8c8ab4fb053b4104647ec37`.
+Installed overwrite, orphan-only, and implicit-first-read-group paths matched
+samtools 1.24 for complete record streams and normalized headers. Their record
+stream SHA-256 values were
+`2ad1b7c463c40d7f09ae8a4176bfecb0ff79be58c181249f690c7e11d48ee103`,
+`f31c577c0f73294717a035faa1a1356c1f11fbd88ccd21f04f82099519bad31d`,
+and `011ceaae1ba5c9104774ad64d6429f2e4267a8bc1c6f9bb0eb23d97f31e8e125`.
+Both binaries rejected a conflicting header ID without `-w`, and the installed
+binary emitted the shared JSON envelope with the expected three-record
+summary.
+
 ## Reproduction
 
 `benchmarks/view-vs-samtools.sh` records the machine, tool versions, binary and
