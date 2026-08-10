@@ -248,6 +248,15 @@ fn default_header_records_program_provenance() {
 }
 
 #[test]
+fn sam_output_normalizes_lowercase_iupac_bases() {
+    let input = fixture("import-iupac.fastq");
+    let output = run(&["import", input.to_str().unwrap(), "--no-PG"]);
+    assert!(output.status.success());
+    let records = sam_records(&output.stdout);
+    assert_eq!(records[0][9], "ACMGRSVTWYHKDBN");
+}
+
+#[test]
 fn mixed_explicit_and_positional_inputs_are_rejected() {
     let input = fixture("import-se.fastq");
     let output = run(&[

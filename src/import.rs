@@ -19,6 +19,7 @@ const MATE_UNMAPPED: u16 = 0x08;
 const READ1: u16 = 0x40;
 const READ2: u16 = 0x80;
 const UNMAPPED_BIN: u16 = 4680;
+const BASES: &[u8; 16] = b"=ACMGRSVTWYHKDBN";
 
 #[derive(Clone, Copy, Debug)]
 pub enum Inputs<'a> {
@@ -342,12 +343,16 @@ fn build_sam_record(
         }
     }
 
+    let sequence = sequence
+        .iter()
+        .map(|base| BASES[usize::from(nt16(*base))])
+        .collect::<Vec<_>>();
     let scores = quality.iter().map(|score| score - 33).collect::<Vec<_>>();
     Ok(sam::alignment::RecordBuf::builder()
         .set_name(name.to_vec())
         .set_flags(Flags::from(flags))
         .set_mapping_quality(MappingQuality::new(0).expect("zero is a valid mapping quality"))
-        .set_sequence(Sequence::from(sequence.to_vec()))
+        .set_sequence(Sequence::from(sequence))
         .set_quality_scores(QualityScores::from(scores))
         .set_data(data)
         .build())

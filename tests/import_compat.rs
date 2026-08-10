@@ -86,10 +86,12 @@ fn import_matches_samtools_1_24_for_core_input_modes_and_tags() {
     assert!(version.stdout.starts_with(b"samtools 1.24\n"));
 
     let single = fixture("import-se.fastq");
+    let iupac = fixture("import-iupac.fastq");
     let interleaved = fixture("import-interleaved.fastq");
     let read1 = fixture("import-r1.fastq");
     let read2 = fixture("import-r2.fastq");
     assert_stdout_matches(&[single.to_str().unwrap()], &[single.to_str().unwrap()]);
+    assert_stdout_matches(&[iupac.to_str().unwrap()], &[iupac.to_str().unwrap()]);
     assert_stdout_matches(
         &["-0", interleaved.to_str().unwrap(), "--order", "ro"],
         &["-0", interleaved.to_str().unwrap(), "--order", "ro"],
