@@ -2,7 +2,7 @@
 
 `rsomics-bam` is a single command-line product for SAM, BAM, and CRAM
 inspection, filtering, conversion, validation, collation, mate repair, sorting,
-compressed file editing, duplicate marking, and pileup workflows.
+compressed file editing, duplicate marking, FASTQ import, and pileup workflows.
 
 ## Install
 
@@ -24,6 +24,7 @@ cargo install rsomics-bam
 | `fixmate` | Repair mate fields in name-grouped alignments |
 | `head` | Print alignment headers and leading records as SAM |
 | `index` | Build BAI, CSI, or CRAI random-access indexes |
+| `import` | Convert FASTQ reads to unmapped SAM or BAM |
 | `merge` | Merge ordered alignment files into BAM |
 | `markdup` | Mark or remove duplicate alignments in coordinate order |
 | `mpileup` | Generate per-position text pileup |
@@ -42,6 +43,7 @@ rsomics-bam depth -a -b targets.bed sample.bam
 rsomics-bam fastq -o reads.fq.bgzf name-sorted.bam
 rsomics-bam fixmate -m grouped.bam -o fixed.bam
 rsomics-bam index -c -m 14 sample.bam
+rsomics-bam import read1.fastq read2.fastq -@ 4 -o unmapped.bam
 rsomics-bam merge lane1.bam lane2.cram --reference reference.fa -o merged.bam
 rsomics-bam markdup -r fixed-and-sorted.bam -o deduplicated.bam
 rsomics-bam mpileup -f reference.fa -Q 20 input.bam
@@ -69,6 +71,13 @@ with qualities in each READ1, READ2, or other category, restore original read
 orientation, and write one unified stream. Named `.gz`, `.bgz`, and `.bgzf`
 outputs are BGZF. Split read-end files, singleton routing, copied auxiliary
 tags, UMI/CASAVA headers, and soft-clip removal are not exposed.
+`import` accepts one FASTQ, two paired FASTQs, or the corresponding
+`-0`/`-s`/`-1`/`-2` forms. A single input derives PAIRED, READ1, and READ2 from
+`/1` and `/2` suffixes. Standard output defaults to SAM; `.bam` selects BAM for
+named output, and `-O` overrides format selection. Named outputs are
+transactional. Read groups, input-order tags, plain/gzip/BGZF input, and BAM
+compression workers are supported. Index FASTQs, CASAVA and UMI parsing,
+FASTQ-comment auxiliary tags, and CRAM output are not yet exposed.
 `markdup` consumes coordinate-sorted output from `fixmate -m`, marks or removes
 duplicates, and supports template and sequence decision modes. It preserves
 SAM, BAM, and CRAM input semantics while producing transactional BAM output.
@@ -95,6 +104,8 @@ passes validation. It uses up to four additional workers when `-@` is omitted;
 pass `-@ 0` for one-thread sorting.
 
 Stable behavior is tested against samtools 1.24 across SAM, BAM, and CRAM.
+FASTQ import is field-matched for positional and explicit input modes, read
+groups, order tags, compressed input, standard input, SAM, and BAM output.
 FASTA/FASTQ extraction also has bytewise stdin and historical-fixture checks.
 Named alignment and pileup outputs are committed only after successful
 processing. See [PERFORMANCE.md](PERFORMANCE.md) for the representative BAM

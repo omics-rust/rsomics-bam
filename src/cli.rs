@@ -51,6 +51,8 @@ enum Command {
     Head(commands::head::Arguments),
     /// Build BAI, CSI, or CRAI random-access indexes
     Index(commands::index::Arguments),
+    /// Convert FASTQ reads to unmapped SAM or BAM
+    Import(commands::import::Arguments),
     /// Merge ordered alignment files
     Merge(commands::merge::Arguments),
     /// Mark duplicate alignments in coordinate order
@@ -82,6 +84,7 @@ pub(crate) enum CommandOutput {
     Fastq { summary: crate::fastx::Summary },
     Head { summary: head::Summary },
     Index { summaries: Vec<index::Summary> },
+    Import { summary: crate::import::Summary },
     Merge { summary: merge::Summary },
     Markdup { summary: markdup::Summary },
     Mpileup { summary: mpileup::Summary },
@@ -111,6 +114,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Fastq(arguments) => commands::fastx::execute_fastq(arguments, cli.output.json),
         Command::Head(arguments) => commands::head::execute(arguments, cli.output.json),
         Command::Index(arguments) => commands::index::execute(arguments, cli.output.json),
+        Command::Import(arguments) => commands::import::execute(arguments, cli.output.json),
         Command::Merge(arguments) => commands::merge::execute(arguments, cli.output.json),
         Command::Markdup(arguments) => commands::markdup::execute(arguments, cli.output.json),
         Command::Mpileup(arguments) => commands::mpileup::execute(arguments, cli.output.json),
@@ -241,5 +245,30 @@ mod tests {
             .to_string();
         assert!(fastq.contains("-O, --original-quality"), "{fastq}");
         assert!(fastq.contains("-v, --default-quality"), "{fastq}");
+    }
+
+    #[test]
+    fn import_help_exposes_the_stable_fastq_slice() {
+        let help = rsomics_help::try_parse_from::<Cli, _, _>(["rsomics-bam", "import", "--help"])
+            .unwrap_err()
+            .to_string();
+        for option in [
+            "-0, --single",
+            "-s, --interleaved",
+            "-1, --read1",
+            "-2, --read2",
+            "-o, --output",
+            "-O, --output-fmt",
+            "-r, --rg-line",
+            "-R, --rg",
+            "--order",
+            "-@, --threads",
+            "--no-pg",
+        ] {
+            assert!(help.contains(option), "missing {option} in {help}");
+        }
+        for excluded in ["--i1", "--CASAVA", "--UMI", "--name2", "--barcode-tag"] {
+            assert!(!help.contains(excluded), "unexpected {excluded} in {help}");
+        }
     }
 }

@@ -6,6 +6,7 @@ pub(crate) mod fixmate;
 pub(crate) mod flags;
 pub(crate) mod flagstat;
 pub(crate) mod head;
+pub(crate) mod import;
 pub(crate) mod index;
 pub(crate) mod markdup;
 pub(crate) mod merge;

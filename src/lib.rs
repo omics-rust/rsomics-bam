@@ -18,6 +18,8 @@ pub mod flags;
 pub mod flagstat;
 /// Header and leading-record inspection.
 pub mod head;
+/// FASTQ conversion to unmapped alignment records.
+pub mod import;
 /// Alignment random-access index construction.
 pub mod index;
 /// Coordinate-sorted duplicate marking.
