@@ -56,11 +56,18 @@ fingerprint() {
     local context=$1
     local tool=$2
     local bam=$3
+    local raw_header=$output_dir/.$context-$tool.header
     "$samtools" view -c "$bam" >/dev/null
-    "$samtools" view -H "$bam" | grep -Ev '^@PG[[:space:]]' | shasum -a 256 \
-        > "$output_dir/$context-$tool-header.sha256"
+    "$samtools" view -H "$bam" > "$raw_header"
+    {
+        grep -E '^@HD[[:space:]]' "$raw_header"
+        grep -E '^@SQ[[:space:]]' "$raw_header"
+        grep -E '^@RG[[:space:]]' "$raw_header"
+        grep -Ev '^@(HD|SQ|RG|PG)[[:space:]]' "$raw_header" | sort
+    } | shasum -a 256 > "$output_dir/$context-$tool-header.sha256"
     "$samtools" view "$bam" | shasum -a 256 \
         > "$output_dir/$context-$tool-records.sha256"
+    rm -f "$raw_header"
 }
 
 validate() {
