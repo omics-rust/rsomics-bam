@@ -84,6 +84,7 @@ two\t4\t*\t0\t0\t*\t*\t0\t0\tN\t!\n",
         vec!["-R", "old"],
         vec![],
         vec!["-r", "ID:new\\tSM:after"],
+        vec!["-r", "ID:new", "-r", "SM:after"],
         vec!["-r", "ID:new\\tSM:after", "-m", "orphan_only"],
     ] {
         compare(&input, &options);
