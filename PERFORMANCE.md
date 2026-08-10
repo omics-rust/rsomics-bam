@@ -858,6 +858,18 @@ These results establish the default compressed BAM hot path on this fixture.
 SAM, CRAM, uncompressed BAM, other worker counts, and materially different
 reference or auxiliary-tag distributions carry no throughput claim here.
 
+Release 0.17.0 was published from revision
+`0debc103993f992aaf078291f23f3414b52acb3c` after exact-head CI
+`31407557237` passed on native Linux and macOS for x86_64 and aarch64. The
+Linux x86_64 job included the complete samtools 1.24 oracle. Publish workflow
+`31408461408` produced the unyanked 198,528-byte registry archive with SHA-256
+`6fd2ef2ad1c0072b3912d606b4bf52a2ee7d841a74a8af96383f53843eb6efc2`
+and exact VCS metadata. A fresh registry install reported 0.17.0 and exposed
+`calmd` through the shared help tree. Its named-BAM and shared-JSON smoke over
+the one-million-record fixture completed all records, passed `samtools
+quickcheck`, and reproduced decoded-output SHA-256
+`d1e0cfd0c1f1c1c88482e7140efc505ef323b0027ef1fac89be4c0b49d978eb9`.
+
 ## Reproduction
 
 `benchmarks/calmd-vs-samtools-macos.sh` compares default compressed BAM
