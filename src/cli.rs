@@ -5,8 +5,9 @@ use rsomics_common::{OutputArgs, Result, ToolMeta, run as run_tool};
 use serde::Serialize;
 
 use crate::{
-    addreplacerg, bedcov, calmd, cat, collate, commands, coverage, depth, fixmate, flags, flagstat,
-    head, idxstats, index, markdup, merge, mpileup, quickcheck, reheader, samples, sort, view,
+    addreplacerg, bedcov, calmd, cat, collate, commands, coverage, depad, depth, fixmate, flags,
+    flagstat, head, idxstats, index, markdup, merge, mpileup, quickcheck, reheader, samples, sort,
+    view,
 };
 
 const META: ToolMeta = ToolMeta {
@@ -45,6 +46,8 @@ enum Command {
     Coverage(commands::coverage::Arguments),
     /// Compute read depth at each position
     Depth(commands::depth::Arguments),
+    /// Convert padded-reference alignments to unpadded coordinates
+    Depad(commands::depad::Arguments),
     /// Repair mate fields in name-grouped alignments
     Fixmate(commands::fixmate::Arguments),
     /// Convert between numeric and symbolic SAM flags
@@ -91,6 +94,7 @@ pub(crate) enum CommandOutput {
     Collate { summary: collate::Summary },
     Coverage { report: coverage::Report },
     Depth { summary: depth::Summary },
+    Depad { summary: depad::Summary },
     Fixmate { summary: fixmate::Summary },
     Flags { values: Vec<flags::FlagValue> },
     Flagstat { counts: Box<flagstat::Counts> },
@@ -128,6 +132,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Collate(arguments) => commands::collate::execute(arguments, cli.output.json),
         Command::Coverage(arguments) => commands::coverage::execute(arguments, cli.output.json),
         Command::Depth(arguments) => commands::depth::execute(arguments, cli.output.json),
+        Command::Depad(arguments) => commands::depad::execute(arguments, cli.output.json),
         Command::Fixmate(arguments) => commands::fixmate::execute(arguments, cli.output.json),
         Command::Flags(arguments) => commands::flags::execute(arguments, cli.output.json),
         Command::Flagstat(arguments) => commands::flagstat::execute(arguments, cli.output.json),
@@ -338,6 +343,29 @@ mod tests {
             assert!(help.contains(option), "missing {option} in {help}");
         }
         for excluded in ["--baq", "--extended-baq", "--cap-mapq", "--output-cram"] {
+            assert!(!help.contains(excluded), "unexpected {excluded} in {help}");
+        }
+    }
+
+    #[test]
+    fn depad_help_exposes_only_the_stable_projection_slice() {
+        let help = rsomics_help::try_parse_from::<Cli, _, _>(["rsomics-bam", "depad", "--help"])
+            .unwrap_err()
+            .to_string();
+        for option in [
+            "-s, --sam",
+            "-S",
+            "-u, --uncompressed",
+            "-1, --fast-compression",
+            "-O, --output-fmt",
+            "-T, --reference",
+            "-o, --output",
+            "-@, --threads",
+            "--no-pg",
+        ] {
+            assert!(help.contains(option), "missing {option} in {help}");
+        }
+        for excluded in ["--write-index", "--output-fmt-option", "--output-cram"] {
             assert!(!help.contains(excluded), "unexpected {excluded} in {help}");
         }
     }

@@ -87,6 +87,7 @@ jobs:
           cargo test --locked --test cat_reheader_compat
           cargo test --locked --test compat -- --ignored
           cargo test --locked --test depth -- --ignored
+          cargo test --locked --test depad_compat -- --ignored
           cargo test --locked --test fastx_compat -- --ignored
           cargo test --locked --test fixmate -- --ignored
           cargo test --locked --test import_compat -- --ignored
