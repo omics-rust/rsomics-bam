@@ -235,7 +235,7 @@ where
                 writer.finish(header)?;
                 writer.get_mut().flush()
             }
-            Inner::BamSingle(mut writer) => writer.try_finish(),
+            Inner::BamSingle(writer) => writer.into_inner().finish().map(drop),
             Inner::BamParallel(writer) => writer.into_inner().finish().map(drop),
             Inner::BamParallelLevel(mut writer) => writer.get_mut().finish().map(drop),
         }

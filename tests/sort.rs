@@ -277,7 +277,7 @@ fn uncompressed_bam_is_supported_and_missing_bgzf_eof_fails() {
         compressed.to_str().unwrap(),
     ]);
     let mut bytes = fs::read(&compressed).unwrap();
-    bytes.truncate(bytes.len() - 56);
+    bytes.truncate(bytes.len() - 28);
     fs::write(&compressed, bytes).unwrap();
     fs::write(&sorted, b"sentinel").unwrap();
     let failed = fail(&[
