@@ -70,6 +70,12 @@ impl OrderTag {
             }
         }
     }
+
+    fn tag(self) -> [u8; 2] {
+        match self {
+            Self::Integer(tag) | Self::String { tag, .. } => tag,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -101,6 +107,11 @@ where
     }
 
     let (mut header, read_group_id) = build_header(options.read_group)?;
+    if read_group_id.is_some() && options.order.is_some_and(|order| order.tag() == *b"RG") {
+        return Err(RsomicsError::ConfigError(
+            "the order tag cannot be RG when a read group is present".to_owned(),
+        ));
+    }
     if let Some(program) = options.program {
         program.add_to(&mut header)?;
     }

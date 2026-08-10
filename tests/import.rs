@@ -257,6 +257,20 @@ fn sam_output_normalizes_lowercase_iupac_bases() {
 }
 
 #[test]
+fn order_tag_cannot_replace_the_read_group_tag() {
+    let input = fixture("import-se.fastq");
+    let output = run(&[
+        "import",
+        input.to_str().unwrap(),
+        "-R",
+        "lib1",
+        "--order",
+        "RG",
+    ]);
+    assert!(!output.status.success());
+}
+
+#[test]
 fn mixed_explicit_and_positional_inputs_are_rejected() {
     let input = fixture("import-se.fastq");
     let output = run(&[
