@@ -5,8 +5,8 @@ use rsomics_common::{OutputArgs, Result, ToolMeta, run as run_tool};
 use serde::Serialize;
 
 use crate::{
-    addreplacerg, cat, collate, commands, depth, fixmate, flags, flagstat, head, index, markdup,
-    merge, mpileup, quickcheck, reheader, samples, sort, view,
+    addreplacerg, bedcov, cat, collate, commands, coverage, depth, fixmate, flags, flagstat, head,
+    idxstats, index, markdup, merge, mpileup, quickcheck, reheader, samples, sort, view,
 };
 
 const META: ToolMeta = ToolMeta {
@@ -33,10 +33,14 @@ struct Cli {
 enum Command {
     /// Add or replace alignment read groups
     Addreplacerg(commands::addreplacerg::Arguments),
+    /// Report coverage totals over BED regions
+    Bedcov(commands::bedcov::Arguments),
     /// Concatenate BAM files without reencoding alignment blocks
     Cat(commands::cat::Arguments),
     /// Group alignments by read name with bounded memory
     Collate(commands::collate::Arguments),
+    /// Summarize coverage by reference sequence
+    Coverage(commands::coverage::Arguments),
     /// Compute read depth at each position
     Depth(commands::depth::Arguments),
     /// Repair mate fields in name-grouped alignments
@@ -53,6 +57,8 @@ enum Command {
     Head(commands::head::Arguments),
     /// Build BAI, CSI, or CRAI random-access indexes
     Index(commands::index::Arguments),
+    /// Report mapped and unmapped segments by reference
+    Idxstats(commands::idxstats::Arguments),
     /// Convert FASTQ reads to unmapped SAM or BAM
     Import(commands::import::Arguments),
     /// Merge ordered alignment files
@@ -77,8 +83,10 @@ enum Command {
 #[serde(tag = "command", rename_all = "kebab-case")]
 pub(crate) enum CommandOutput {
     Addreplacerg { summary: addreplacerg::Summary },
+    Bedcov { summary: bedcov::Summary },
     Cat { summary: cat::Summary },
     Collate { summary: collate::Summary },
+    Coverage { report: coverage::Report },
     Depth { summary: depth::Summary },
     Fixmate { summary: fixmate::Summary },
     Flags { values: Vec<flags::FlagValue> },
@@ -87,6 +95,7 @@ pub(crate) enum CommandOutput {
     Fastq { summary: crate::fastx::Summary },
     Head { summary: head::Summary },
     Index { summaries: Vec<index::Summary> },
+    Idxstats { report: idxstats::Report },
     Import { summary: crate::import::Summary },
     Merge { summary: merge::Summary },
     Markdup { summary: markdup::Summary },
@@ -110,8 +119,10 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Addreplacerg(arguments) => {
             commands::addreplacerg::execute(arguments, cli.output.json)
         }
+        Command::Bedcov(arguments) => commands::bedcov::execute(arguments, cli.output.json),
         Command::Cat(arguments) => commands::cat::execute(arguments, cli.output.json),
         Command::Collate(arguments) => commands::collate::execute(arguments, cli.output.json),
+        Command::Coverage(arguments) => commands::coverage::execute(arguments, cli.output.json),
         Command::Depth(arguments) => commands::depth::execute(arguments, cli.output.json),
         Command::Fixmate(arguments) => commands::fixmate::execute(arguments, cli.output.json),
         Command::Flags(arguments) => commands::flags::execute(arguments, cli.output.json),
@@ -120,6 +131,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Fastq(arguments) => commands::fastx::execute_fastq(arguments, cli.output.json),
         Command::Head(arguments) => commands::head::execute(arguments, cli.output.json),
         Command::Index(arguments) => commands::index::execute(arguments, cli.output.json),
+        Command::Idxstats(arguments) => commands::idxstats::execute(arguments, cli.output.json),
         Command::Import(arguments) => commands::import::execute(arguments, cli.output.json),
         Command::Merge(arguments) => commands::merge::execute(arguments, cli.output.json),
         Command::Markdup(arguments) => commands::markdup::execute(arguments, cli.output.json),
@@ -243,6 +255,65 @@ mod tests {
         }
         for excluded in ["--write-index", "--output-fmt-option", "--verbosity"] {
             assert!(!help.contains(excluded), "unexpected {excluded} in {help}");
+        }
+    }
+
+    #[test]
+    fn coverage_summary_help_exposes_only_the_stable_table_slice() {
+        let bedcov = rsomics_help::try_parse_from::<Cli, _, _>(["rsomics-bam", "bedcov", "--help"])
+            .unwrap_err()
+            .to_string();
+        for option in [
+            "-Q, --min-MQ",
+            "-X",
+            "-g <FLAG>",
+            "-G <FLAG>",
+            "-j",
+            "-d <INT>",
+            "--max-depth",
+            "-c",
+            "-H",
+            "-o, --output",
+            "-@, --threads",
+            "--reference",
+        ] {
+            assert!(bedcov.contains(option), "missing {option} in {bedcov}");
+        }
+
+        let coverage =
+            rsomics_help::try_parse_from::<Cli, _, _>(["rsomics-bam", "coverage", "--help"])
+                .unwrap_err()
+                .to_string();
+        for option in [
+            "-b, --bam-list",
+            "-l, --min-read-len",
+            "-q, --min-MQ",
+            "-Q, --min-BQ",
+            "--rf",
+            "--ff",
+            "-d, --depth",
+            "--min-depth",
+            "-r, --region",
+            "-H, --no-header",
+            "-o, --output",
+            "-@, --threads",
+            "--reference",
+        ] {
+            assert!(coverage.contains(option), "missing {option} in {coverage}");
+        }
+        for excluded in ["--histogram", "--plot-depth", "--ascii", "--n-bins"] {
+            assert!(
+                !coverage.contains(excluded),
+                "unexpected {excluded} in {coverage}"
+            );
+        }
+
+        let idxstats =
+            rsomics_help::try_parse_from::<Cli, _, _>(["rsomics-bam", "idxstats", "--help"])
+                .unwrap_err()
+                .to_string();
+        for option in ["-X", "-o, --output", "-@, --threads", "--reference"] {
+            assert!(idxstats.contains(option), "missing {option} in {idxstats}");
         }
     }
 

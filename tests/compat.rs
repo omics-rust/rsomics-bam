@@ -277,6 +277,153 @@ fn build_alignment_set(directory: &Path) -> AlignmentSet {
 }
 
 #[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn coverage_summaries_match_samtools_1_24() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let inputs = build_alignment_set(directory.path());
+    run_samtools(&["index", inputs.bam.to_str().unwrap()]);
+    run_samtools(&["index", inputs.cram.to_str().unwrap()]);
+
+    for input in [&inputs.sam, &inputs.bam, &inputs.cram] {
+        for options in [
+            Vec::new(),
+            vec!["-l", "9"],
+            vec!["-q", "61"],
+            vec!["-Q", "41"],
+            vec!["--rf", "PAIRED"],
+            vec!["--ff", "READ2"],
+            vec!["--min-depth", "2"],
+            vec!["-d", "1"],
+            vec!["-H"],
+        ] {
+            let mut ours = vec!["coverage"];
+            let mut oracle = vec!["coverage"];
+            ours.extend(options.iter().copied());
+            oracle.extend(options.iter().copied());
+            if input == &inputs.cram {
+                ours.extend(["--reference", inputs.reference.to_str().unwrap()]);
+                oracle.extend(["--reference", inputs.reference.to_str().unwrap()]);
+            }
+            ours.push(input.to_str().unwrap());
+            oracle.push(input.to_str().unwrap());
+            assert_eq!(
+                run_ours(&ours).stdout,
+                run_samtools(&oracle).stdout,
+                "{} {options:?}",
+                input.display()
+            );
+        }
+    }
+
+    for input in [&inputs.bam, &inputs.cram] {
+        let mut ours = vec!["coverage", "-r", "chr1:5-20"];
+        let mut oracle = ours.clone();
+        if input == &inputs.cram {
+            ours.extend(["--reference", inputs.reference.to_str().unwrap()]);
+            oracle.extend(["--reference", inputs.reference.to_str().unwrap()]);
+        }
+        ours.push(input.to_str().unwrap());
+        oracle.push(input.to_str().unwrap());
+        assert_eq!(
+            run_ours(&ours).stdout,
+            run_samtools(&oracle).stdout,
+            "{} region",
+            input.display()
+        );
+    }
+
+    for input in [&inputs.sam, &inputs.bam, &inputs.cram] {
+        let mut ours = vec!["idxstats"];
+        let mut oracle = ours.clone();
+        ours.push(input.to_str().unwrap());
+        oracle.push(input.to_str().unwrap());
+        assert_eq!(
+            run_ours(&ours).stdout,
+            run_samtools(&oracle).stdout,
+            "{} idxstats",
+            input.display()
+        );
+    }
+
+    let custom_bai = directory.path().join("custom.bai");
+    fs::copy(appended_extension(&inputs.bam, "bai"), &custom_bai).unwrap();
+    let ours = run_ours(&[
+        "idxstats",
+        "-X",
+        inputs.bam.to_str().unwrap(),
+        custom_bai.to_str().unwrap(),
+    ]);
+    let oracle = run_samtools(&[
+        "idxstats",
+        "-X",
+        inputs.bam.to_str().unwrap(),
+        custom_bai.to_str().unwrap(),
+    ]);
+    assert_eq!(ours.stdout, oracle.stdout);
+}
+
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn bedcov_matches_samtools_1_24() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let bam = directory.path().join("bedcov.bam");
+    run_samtools(&[
+        "view",
+        "-b",
+        "-o",
+        bam.to_str().unwrap(),
+        golden("bedcov.sam").to_str().unwrap(),
+    ]);
+    run_samtools(&["index", bam.to_str().unwrap()]);
+    let bed = golden("bedcov.bed");
+
+    for options in [
+        Vec::new(),
+        vec!["-j"],
+        vec!["-Q", "20"],
+        vec!["-d", "2"],
+        vec!["-g", "DUP"],
+        vec!["-G", "REVERSE"],
+        vec!["-c"],
+        vec!["-H"],
+        vec!["--max-depth", "1"],
+        vec!["--max-depth", "1", "-c"],
+    ] {
+        let mut ours = vec!["bedcov"];
+        let mut oracle = vec!["bedcov"];
+        ours.extend(options.iter().copied());
+        oracle.extend(options.iter().copied());
+        ours.extend([bed.to_str().unwrap(), bam.to_str().unwrap()]);
+        oracle.extend([bed.to_str().unwrap(), bam.to_str().unwrap()]);
+        assert_eq!(
+            run_ours(&ours).stdout,
+            run_samtools(&oracle).stdout,
+            "{options:?}"
+        );
+    }
+
+    let custom_bai = directory.path().join("custom.bai");
+    fs::copy(appended_extension(&bam, "bai"), &custom_bai).unwrap();
+    let ours = run_ours(&[
+        "bedcov",
+        "-X",
+        bed.to_str().unwrap(),
+        bam.to_str().unwrap(),
+        custom_bai.to_str().unwrap(),
+    ]);
+    let oracle = run_samtools(&[
+        "bedcov",
+        "-X",
+        bed.to_str().unwrap(),
+        bam.to_str().unwrap(),
+        custom_bai.to_str().unwrap(),
+    ]);
+    assert_eq!(ours.stdout, oracle.stdout);
+}
+
+#[test]
 fn flagstat_matches_committed_samtools_text() {
     let input = golden("flagstat-small.bam");
     let output = run_ours(&["flagstat", input.to_str().unwrap()]);

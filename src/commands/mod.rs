@@ -1,12 +1,15 @@
 pub(crate) mod addreplacerg;
+pub(crate) mod bedcov;
 pub(crate) mod cat;
 pub(crate) mod collate;
+pub(crate) mod coverage;
 pub(crate) mod depth;
 pub(crate) mod fastx;
 pub(crate) mod fixmate;
 pub(crate) mod flags;
 pub(crate) mod flagstat;
 pub(crate) mod head;
+pub(crate) mod idxstats;
 pub(crate) mod import;
 pub(crate) mod index;
 pub(crate) mod markdup;

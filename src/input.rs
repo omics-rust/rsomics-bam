@@ -30,6 +30,7 @@ enum Inner {
     BamRaw(bam::io::Reader<BufReader<File>>),
     Cram(cram::io::Reader<BufReader<File>>),
     Indexed(IndexedAlignmentReader),
+    IndexedDirect(alignment::io::IndexedReader<File>),
 }
 
 type ParallelBamReader = bam::io::Reader<Box<dyn BufRead + Send>>;
@@ -55,6 +56,7 @@ impl Reader {
             Inner::BamRaw(reader) => reader.read_header(),
             Inner::Cram(reader) => reader.read_header(),
             Inner::Indexed(reader) => reader.read_header(),
+            Inner::IndexedDirect(reader) => reader.read_header(),
         };
         result.map_err(|error| {
             RsomicsError::InvalidInput(format!(
@@ -127,6 +129,14 @@ impl Reader {
                     }
                 }
             }
+            Inner::IndexedDirect(reader) => {
+                for result in reader.records(header) {
+                    let record = result.map_err(|error| record_error(input, error))?;
+                    if !visit(record.as_ref())? {
+                        break;
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -174,22 +184,33 @@ impl Reader {
         region: Option<&Region>,
         mut visit: impl FnMut(&dyn sam::alignment::Record) -> Result<bool>,
     ) -> Result<()> {
-        let Inner::Indexed(reader) = &mut self.inner else {
-            return Err(RsomicsError::ConfigError(
-                "region query requires an indexed alignment reader".to_owned(),
-            ));
-        };
-
         let records: Box<dyn Iterator<Item = io::Result<Box<dyn sam::alignment::Record>>> + '_> =
-            match region {
-                Some(region) => reader
-                    .query(header, region)
-                    .map(Box::new)
-                    .map_err(|error| query_error(input, region.to_string(), error))?,
-                None => reader
-                    .query_unmapped(header)
-                    .map(Box::new)
-                    .map_err(|error| query_error(input, "*", error))?,
+            match &mut self.inner {
+                Inner::Indexed(reader) => match region {
+                    Some(region) => reader
+                        .query(header, region)
+                        .map(Box::new)
+                        .map_err(|error| query_error(input, region.to_string(), error))?,
+                    None => reader
+                        .query_unmapped(header)
+                        .map(Box::new)
+                        .map_err(|error| query_error(input, "*", error))?,
+                },
+                Inner::IndexedDirect(reader) => match region {
+                    Some(region) => reader
+                        .query(header, region)
+                        .map(Box::new)
+                        .map_err(|error| query_error(input, region.to_string(), error))?,
+                    None => reader
+                        .query_unmapped(header)
+                        .map(Box::new)
+                        .map_err(|error| query_error(input, "*", error))?,
+                },
+                _ => {
+                    return Err(RsomicsError::ConfigError(
+                        "region query requires an indexed alignment reader".to_owned(),
+                    ));
+                }
             };
 
         for result in records {
@@ -316,6 +337,52 @@ pub(crate) fn open(
 pub(crate) fn open_indexed(input: &Path, reference: Option<&Path>) -> Result<Reader> {
     let format = detect_format(input)?;
     let inner = open_indexed_alignment(input, reference).map(Inner::Indexed)?;
+    Ok(Reader { inner, format })
+}
+
+pub(crate) fn open_indexed_with_index(
+    input: &Path,
+    index: &Path,
+    reference: Option<&Path>,
+) -> Result<Reader> {
+    let format = detect_format(input)?;
+    let mut builder = alignment::io::indexed_reader::Builder::default();
+    if let Some(reference) = reference {
+        builder = builder.set_reference_sequence_repository(reference_repository(reference)?);
+    }
+    builder = match format {
+        Format::Sam | Format::Bam => match bam::bai::fs::read(index) {
+            Ok(index) => builder.set_index(index),
+            Err(bai_error) => match noodles::csi::fs::read(index) {
+                Ok(index) => builder.set_index(index),
+                Err(csi_error) => {
+                    return Err(RsomicsError::InvalidInput(format!(
+                        "reading custom alignment index {}: BAI: {bai_error}; CSI: {csi_error}",
+                        index.display()
+                    )));
+                }
+            },
+        },
+        Format::Cram => {
+            let index = cram::crai::fs::read(index).map_err(|error| {
+                RsomicsError::InvalidInput(format!(
+                    "reading custom CRAM index {}: {error}",
+                    index.display()
+                ))
+            })?;
+            builder.set_index(index)
+        }
+    };
+    let inner = builder
+        .build_from_path(input)
+        .map(Inner::IndexedDirect)
+        .map_err(|error| {
+            RsomicsError::InvalidInput(format!(
+                "opening {} with custom index {}: {error}",
+                input.display(),
+                index.display()
+            ))
+        })?;
     Ok(Reader { inner, format })
 }
 

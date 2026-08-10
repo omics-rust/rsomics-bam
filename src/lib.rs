@@ -4,10 +4,15 @@
 
 /// Alignment read-group editing.
 pub mod addreplacerg;
+/// Coverage totals over BED regions.
+pub mod bedcov;
 /// Compressed-block BAM concatenation.
 pub mod cat;
 /// Bounded-memory read-name collation.
 pub mod collate;
+/// Per-reference alignment coverage summaries.
+pub mod coverage;
+mod coverage_hts;
 /// Per-position alignment depth.
 pub mod depth;
 /// Name-grouped FASTA and FASTQ extraction.
@@ -20,6 +25,8 @@ pub mod flags;
 pub mod flagstat;
 /// Header and leading-record inspection.
 pub mod head;
+/// Per-reference index or stream statistics.
+pub mod idxstats;
 /// FASTQ conversion to unmapped alignment records.
 pub mod import;
 /// Alignment random-access index construction.
@@ -46,6 +53,7 @@ pub mod view;
 pub use program::Program;
 
 mod alignment_order;
+mod alignment_stream;
 mod bgzf_rewrite;
 mod cli;
 mod commands;

@@ -1,0 +1,8 @@
+@HD	VN:1.6	SO:coordinate
+@SQ	SN:chr1	LN:30
+deletion	0	chr1	1	60	5M3D5M	*	0	0	AAAAAAAAAA	IIIIIIIIII
+skip	0	chr1	1	60	5M3N5M	*	0	0	AAAAAAAAAA	IIIIIIIIII
+lowmap	0	chr1	1	10	5M	*	0	0	AAAAA	IIIII
+secondary	256	chr1	1	60	5M	*	0	0	AAAAA	IIIII
+qcfail	512	chr1	1	60	5M	*	0	0	AAAAA	IIIII
+duplicate	1024	chr1	1	60	5M	*	0	0	AAAAA	IIIII
