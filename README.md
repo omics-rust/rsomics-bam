@@ -2,7 +2,7 @@
 
 `rsomics-bam` is a single command-line product for SAM, BAM, and CRAM
 inspection, filtering, conversion, validation, collation, mate repair, sorting,
-and pileup workflows.
+duplicate marking, and pileup workflows.
 
 ## Install
 
@@ -22,6 +22,7 @@ cargo install rsomics-bam
 | `head` | Print alignment headers and leading records as SAM |
 | `index` | Build BAI, CSI, or CRAI random-access indexes |
 | `merge` | Merge ordered alignment files into BAM |
+| `markdup` | Mark or remove duplicate alignments in coordinate order |
 | `mpileup` | Generate per-position text pileup |
 | `quickcheck` | Validate headers and format-specific end markers |
 | `samples` | List samples and other read-group metadata |
@@ -36,6 +37,7 @@ rsomics-bam depth -a -b targets.bed sample.bam
 rsomics-bam fixmate -m grouped.bam -o fixed.bam
 rsomics-bam index -c -m 14 sample.bam
 rsomics-bam merge lane1.bam lane2.cram --reference reference.fa -o merged.bam
+rsomics-bam markdup -r fixed-and-sorted.bam -o deduplicated.bam
 rsomics-bam mpileup -f reference.fa -Q 20 input.bam
 rsomics-bam sort -m 768M -o sorted.bam input.bam
 ```
@@ -55,6 +57,11 @@ early-pair buffering are not yet exposed.
 flags, TLEN, MC, and MQ. `-m` adds the mate-score tags consumed by `markdup`.
 Sanitizer selection, template-cigar and base-modification repair, and alternate
 output formats are not yet exposed.
+`markdup` consumes coordinate-sorted output from `fixmate -m`, marks or removes
+duplicates, and supports template and sequence decision modes. It preserves
+SAM, BAM, and CRAM input semantics while producing transactional BAM output.
+Optical duplicate classification, barcode partitioning, duplicate chains,
+non-primary propagation, and alternate output formats are not yet exposed.
 `merge` accepts named, already ordered SAM, BAM, and CRAM inputs and writes BAM.
 It reconciles reference, read-group, and program records, validates both the
 declared and observed order, and keeps its per-input read-ahead bounded. It

@@ -354,6 +354,62 @@ and the measured thread settings only. They do not establish the same
 performance for SAM, CRAM, standard input, other option combinations, or
 different template-size distributions.
 
+## Markdup benchmark
+
+The 2026-08-10 markdup gate used feature revision
+`5c7dc5603dabdeed212ef270474270f6abdbb47d` and samtools/HTSlib 1.24 on an
+Apple M2 Mac mini with 8 GiB of memory and macOS 26.6.1. The 92,673,552-byte
+coordinate-sorted BAM contained 4,000,000 records and had SHA-256
+`bc2257da48b4c06da643edafbec1a383e946b7d1a0c0dd09dc21edc48dc2ef2d`.
+It was generated through the release product path with `fixmate -m` followed
+by coordinate sorting. Twelve timed pairs alternated command order after one
+warm-up.
+
+```text
+rsomics-bam markdup --no-pg input.coordinate.bam -o ours.bam
+samtools markdup --no-PG -@ 0 input.coordinate.bam samtools.bam
+```
+
+| Tool | Mean wall time | Mean CPU time | Mean peak RSS |
+|---|---:|---:|---:|
+| `rsomics-bam markdup` | 2.3475 s | 8.3583 s | 6,980,949 bytes |
+| `samtools markdup` | 7.6617 s | 7.2467 s | 7,587,157 bytes |
+
+The default product path selected four additional compression workers, won all
+12 pairs, and was 3.26 times as fast by mean wall time. The paired
+rsomics-minus-samtools difference was -5.3142 seconds, with sample standard
+deviation 0.1308 seconds and paired t-statistic -140.70. Mean peak RSS was
+7.99% lower, while mean CPU time was 15.34% higher.
+
+An additional 12-pair gate gave both tools four additional workers. Mean wall
+time was 2.5317 seconds for `rsomics-bam` and 2.7792 seconds for samtools;
+`rsomics-bam` won 10 of 12 pairs. The paired difference was -0.2475 seconds
+with sample standard deviation 0.3793 seconds and paired t-statistic -2.26.
+Mean CPU time was 8.3092 versus 9.0942 seconds, an 8.63% reduction, and mean
+peak RSS was 6,990,507 versus 13,660,160 bytes, a 48.82% reduction.
+
+Every warm-up and timed pair passed samtools quickcheck and produced an
+identical complete `samtools view -h --no-PG` stream. The exact SAM stream
+fingerprint was
+`6279ec79c152d1b2f6092b31021a32f8a62935615a0e2f3668c42e9a17011c99`.
+The measured product binary had SHA-256
+`beeb3ddfa7c789a0841af9594b941d6e20c2a08392abd7a6502c32a85f0ff60b`.
+
+The default environment, timing, summary, and JSON files had SHA-256 values
+`bedfb17f61486845a2e494116afd300ad3fe5cb8fe13b4d6b3c0bce08289ae62`,
+`e54c8d8e80db0bcbb84cfd2ae3ae1d81c8de9e39b1ac1858417ef7364b9aded9`,
+`42c7a2b418fc47c8b7ad3d9bc46e0172faf1888ca370d4ec9c651c40defda4b1`,
+and `74df4b1de37bca65af449cc164f4128f29240817f05d74f0bcc17466c9f6af73`.
+The equal-worker files had SHA-256 values
+`3a261d01dc313f761df8472939e97dcb27d22ed469cbcf6f27ce7f4a129d0b82`,
+`9fac2e4acef6586ff21b33881112498d572478ddb44630d98a13840c49ac2562`,
+`ac64e18fc1616a848c995c7e61f09cafe5316bc8346d09f504f332a6f7de4be1`,
+and `b902cbc0455780fac10ab191f8a8491cdce93a7581e8b3205098b873be939684`.
+These results cover default-mode BAM input and BAM output on the measured
+fixture and thread settings. They do not establish the same performance for
+SAM, CRAM, standard input, removal or clearing, sequence mode, or different
+duplicate distributions.
+
 ## Reproduction
 
 `benchmarks/view-vs-samtools.sh` records the machine, tool versions, binary and
@@ -436,6 +492,21 @@ RSOMICS_COMMIT=24095b8 benchmarks/collate-vs-samtools-macos.sh \
   target/release/rsomics-bam \
   /path/to/samtools \
   /path/to/input.bam \
+  /path/to/results \
+  12 default
+```
+
+Use `equal-workers` as the mode to pass four additional workers to both tools.
+
+`benchmarks/markdup-vs-samtools-macos.sh` compares default duplicate marking,
+alternates command order, and rejects any complete-header, field, auxiliary
+tag, or record-order disagreement:
+
+```sh
+RSOMICS_COMMIT=5c7dc56 benchmarks/markdup-vs-samtools-macos.sh \
+  target/release/rsomics-bam \
+  /path/to/samtools \
+  /path/to/coordinate-sorted-fixmate.bam \
   /path/to/results \
   12 default
 ```
