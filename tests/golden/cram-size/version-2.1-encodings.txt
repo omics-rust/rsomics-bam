@@ -47,5 +47,5 @@ Number of containers                   2
 Number of slices                       2
 Number of sequences                    3
 Number of bases                       17
-Total file size                    10988
-Format overhead size               10943
+Total file size                    10768
+Format overhead size               10723

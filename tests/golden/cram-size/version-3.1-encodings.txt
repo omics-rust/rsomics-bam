@@ -12,7 +12,9 @@ Container encodings
 	NP	HUFFMAN(codes={1},lengths={0})
 	NF	HUFFMAN(codes={0},lengths={0})
 	RL	HUFFMAN(codes={8},lengths={0})
-	FN	HUFFMAN(codes={0},lengths={0})
+	FN	HUFFMAN(codes={1},lengths={0})
+	FC	HUFFMAN(codes={98},lengths={0})
+	FP	HUFFMAN(codes={1},lengths={0})
 	TL	HUFFMAN(codes={0},lengths={0})
 	RI	HUFFMAN(codes={0},lengths={0})
 	BB	BYTE_ARRAY_LEN(len_codec={EXTERNAL(id=42)},val_codec={EXTERNAL(id=37)}
@@ -44,10 +46,12 @@ BLOCK       12           17            6  35.29% 2.      QS
 BLOCK       15            3            3 100.00% .       BF
 BLOCK       16            2            2 100.00% .       CF
 BLOCK       17            2            2 100.00% .       AP
+BLOCK       37           16           12  75.00% 2       BB
+BLOCK       42            2            2 100.00% .       BB
 
 Number of containers                   2
 Number of slices                       2
 Number of sequences                    3
 Number of bases                       17
-Total file size                     1141
-Format overhead size                1107
+Total file size                      862
+Format overhead size                 814
