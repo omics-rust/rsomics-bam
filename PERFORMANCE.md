@@ -410,6 +410,66 @@ fixture and thread settings. They do not establish the same performance for
 SAM, CRAM, standard input, removal or clearing, sequence mode, or different
 duplicate distributions.
 
+## Compressed file-operation benchmark
+
+The 2026-08-10 file-operation gate used the final implementation tree from
+revisions `1178474e4a4577f61882fed249f6f1909491ca40` and
+`62023e111562d6e4bd47c26719b741499d0e1815` with samtools/HTSlib 1.24 on an
+Apple M2 Mac mini with 8 GiB of memory and macOS 26.6.1. One warm-up preceded
+12 alternating timed pairs. Every pair passed samtools quickcheck and produced
+the same complete `samtools view -h --no-PG` stream.
+
+The cat fixture contained four BAM shards totalling 90,038,862 bytes and
+4,000,027 records. Their SHA-256 values were
+`666433497d0653b907d4eb0da46f49bcc2f996eda2b3c497bf4bc2ed9f1b44e9`,
+`2490918d1cc917b434dd5a69669c8daffc6a3dfe434f97ae591d638da2f9d670`,
+`d3ea8e9f1f1363efbc5bd8cfc9f193209c41e521e5a1359295a3ce465b7225fd`,
+and `f7bdf22d5f3f2964b297a789ddef4d8f90689307a588ee7dfea3033e0a8f8cd2`.
+
+| Cat tool | Mean wall time | Mean system time | Mean peak RSS |
+|---|---:|---:|---:|
+| `rsomics-bam cat` | 1.0667 s | 0.0517 s | 5,503,659 bytes |
+| `samtools cat` | 0.9225 s | 0.0525 s | 7,019,179 bytes |
+
+Cat traded 15.63% mean wall time for a 21.59% mean peak-RSS reduction while
+structurally validating every BGZF frame. It won 5 of 12 wall-time pairs; the
+paired difference was 0.1442 seconds with a 0.4008-second sample standard
+deviation and a 1.25 t-statistic. A 4 MiB output-buffer candidate was rejected
+after a separate 24-pair gate: it averaged 1.0358 versus 0.9796 seconds, won
+8 pairs, and used 9,644,032 versus 7,010,304 bytes mean peak RSS. The released
+path retains the bounded 2 MiB policy and makes a resource-use claim, not a
+cat throughput claim.
+
+The reheader fixture was a 92,673,552-byte BAM with 4,000,000 records and
+SHA-256
+`bc2257da48b4c06da643edafbec1a383e946b7d1a0c0dd09dc21edc48dc2ef2d`.
+The replacement SAM header had SHA-256
+`6b73526eb169145d79be3a71bb5e5cd190626771468d1dbc13fb25d94089df50`.
+
+| Reheader tool | Mean wall time | Mean system time | Mean peak RSS |
+|---|---:|---:|---:|
+| `rsomics-bam reheader` | 0.6258 s | 0.0317 s | 5,496,832 bytes |
+| `samtools reheader` | 0.7225 s | 0.0300 s | 6,980,949 bytes |
+
+Reheader reduced mean wall time by 13.38% and mean peak RSS by 21.26%, winning
+9 of 12 pairs. The paired difference was -0.0967 seconds with a 0.2940-second
+sample standard deviation and a -1.14 t-statistic. The decoded cat and
+reheader streams had SHA-256 values
+`6c34e6be99f94979dce788b23849eec7be161179f13fec37fdce84a61c208389`
+and `8bc5ca00000bfa575068de363b70bf3224cbebb3919519b58e2e01f410a19a15`.
+
+The cat environment, timing, summary, and JSON files had SHA-256 values
+`9cde1ffb7b0c87727b36c48dea8aa32cfa75a93216a51c6d56553d70cc10f502`,
+`c8a28d57bc82806c146b30b4ad15cb1ea0417cde1de7d22bcc10e0c0d16b2c86`,
+`c3491dc97b2c642f36ffd9b6dbd6c580232ee3a4cf93be05fefb19bb9f3f1a16`,
+and `275357e146048340a597054de546b686f320f9c971b25d0bd13037dd3392f47b`.
+The corresponding reheader values were
+`d193ebff24fe892cdcbfaaa8714b0090dee8f5969efbd26bb85c193c3b13edab`,
+`4ebc2c45a82fc824c2d9babc3c04b689a2baa11dc6956a62030682b8623c86b4`,
+`85fd17d9980a3efd9cf707e295646c119269e0a66e3ea1c7213dcbc1db377b2a`,
+and `bad792f1c535ca76ccf9d2655113c8a00941d835b48b9dd267282e08fcc316fd`.
+These claims cover named BAM output and the measured fixtures only.
+
 ## Reproduction
 
 `benchmarks/view-vs-samtools.sh` records the machine, tool versions, binary and
@@ -482,6 +542,20 @@ RSOMICS_COMMIT=83b73a0 benchmarks/merge-vs-samtools-macos.sh \
 Use `equal-workers` as the mode to pass four additional workers to both tools.
 The final order argument is one of `coordinate`, `natural`,
 `lexicographical`, or `template-coordinate`.
+
+`benchmarks/file-operations-vs-samtools-macos.sh` compares either BAM
+concatenation or BAM reheadering, alternates command order, and rejects any
+complete decoded-stream disagreement:
+
+```sh
+RSOMICS_COMMIT=1178474 benchmarks/file-operations-vs-samtools-macos.sh \
+  target/release/rsomics-bam /path/to/samtools cat /path/to/results 12 \
+  shard-1.bam shard-2.bam shard-3.bam shard-4.bam
+
+RSOMICS_COMMIT=62023e1 benchmarks/file-operations-vs-samtools-macos.sh \
+  target/release/rsomics-bam /path/to/samtools reheader /path/to/results 12 \
+  replacement.sam input.bam
+```
 
 `benchmarks/collate-vs-samtools-macos.sh` compares standard BAM collation,
 alternates command order, and rejects any complete-header or order-independent

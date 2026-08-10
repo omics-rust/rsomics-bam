@@ -2,7 +2,7 @@
 
 `rsomics-bam` is a single command-line product for SAM, BAM, and CRAM
 inspection, filtering, conversion, validation, collation, mate repair, sorting,
-duplicate marking, and pileup workflows.
+compressed file editing, duplicate marking, and pileup workflows.
 
 ## Install
 
@@ -14,6 +14,7 @@ cargo install rsomics-bam
 
 | Command | Purpose |
 |---|---|
+| `cat` | Concatenate BAM files without reencoding alignment blocks |
 | `collate` | Group all alignments for each read name with bounded memory |
 | `depth` | Compute one per-input depth column at each position |
 | `flags` | Convert numeric and symbolic SAM flags |
@@ -25,6 +26,7 @@ cargo install rsomics-bam
 | `markdup` | Mark or remove duplicate alignments in coordinate order |
 | `mpileup` | Generate per-position text pileup |
 | `quickcheck` | Validate headers and format-specific end markers |
+| `reheader` | Replace a BAM header without reencoding alignment blocks |
 | `samples` | List samples and other read-group metadata |
 | `sort` | Sort alignments with bounded memory and external runs |
 | `view` | Filter records and convert to SAM or BAM |
@@ -32,6 +34,7 @@ cargo install rsomics-bam
 ```sh
 rsomics-bam view -b -@ 4 -q 20 -o selected.bam input.bam
 rsomics-bam view -c -F UNMAP,SECONDARY input.cram -T reference.fa
+rsomics-bam cat lane1.bam lane2.bam -o combined.bam
 rsomics-bam collate -m 128M -o grouped.bam input.bam
 rsomics-bam depth -a -b targets.bed sample.bam
 rsomics-bam fixmate -m grouped.bam -o fixed.bam
@@ -39,6 +42,7 @@ rsomics-bam index -c -m 14 sample.bam
 rsomics-bam merge lane1.bam lane2.cram --reference reference.fa -o merged.bam
 rsomics-bam markdup -r fixed-and-sorted.bam -o deduplicated.bam
 rsomics-bam mpileup -f reference.fa -Q 20 input.bam
+rsomics-bam reheader replacement.sam input.bam -o reheadered.bam
 rsomics-bam sort -m 768M -o sorted.bam input.bam
 ```
 
@@ -62,6 +66,13 @@ duplicates, and supports template and sequence decision modes. It preserves
 SAM, BAM, and CRAM input semantics while producing transactional BAM output.
 Optical duplicate classification, barcode partitioning, duplicate chains,
 non-primary propagation, and alternate output formats are not yet exposed.
+`cat` accepts named BAM inputs, repeated files of filenames, and an optional
+SAM, BAM, or CRAM header source. It preserves compressed alignment blocks,
+record order, and compatible read groups. `reheader` accepts a replacement
+header from SAM, BAM, or CRAM and preserves the input BAM records. Both write
+one complete BGZF stream, reject input/output aliases, and replace named
+outputs only after validation. CRAM concatenation, CRAM output, in-place
+editing, and shell header transformation are not exposed.
 `merge` accepts named, already ordered SAM, BAM, and CRAM inputs and writes BAM.
 It reconciles reference, read-group, and program records, validates both the
 declared and observed order, and keeps its per-input read-ahead bounded. It
