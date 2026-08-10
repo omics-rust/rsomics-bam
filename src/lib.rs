@@ -6,6 +6,8 @@
 pub mod addreplacerg;
 /// Coverage totals over BED regions.
 pub mod bedcov;
+/// Alignment MD and NM tag recalculation.
+pub mod calmd;
 /// Compressed-block BAM concatenation.
 pub mod cat;
 /// Bounded-memory read-name collation.

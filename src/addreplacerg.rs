@@ -110,10 +110,10 @@ where
     if input_format == input::Format::Bam && options.format == Format::Bam {
         let mut encoded_id = read_group_id.clone();
         encoded_id.push(0);
-        reader.visit_owned_raw_records(&input_header, input_path, |mut record| {
-            let modified = stamp_raw(&mut record, &encoded_id, options.mode)?;
+        reader.visit_mut_raw_bam_records(input_path, |record| {
+            let modified = stamp_raw(record, &encoded_id, options.mode)?;
             update_summary(&mut summary, modified)?;
-            writer.write_owned_raw_record(&record)?;
+            writer.write_owned_raw_record(record)?;
             Ok(true)
         })?;
     } else {

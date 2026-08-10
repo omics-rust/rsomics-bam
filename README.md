@@ -17,6 +17,7 @@ cargo install rsomics-bam
 |---|---|
 | `addreplacerg` | Add or replace header read groups and record RG tags |
 | `bedcov` | Append alignment coverage totals to BED regions |
+| `calmd` | Recalculate alignment MD and NM tags from a reference |
 | `cat` | Concatenate BAM files without reencoding alignment blocks |
 | `collate` | Group all alignments for each read name with bounded memory |
 | `coverage` | Summarize reads, breadth, depth, and quality by reference |
@@ -44,6 +45,7 @@ rsomics-bam view -b -@ 4 -q 20 -o selected.bam input.bam
 rsomics-bam view -c -F UNMAP,SECONDARY input.cram -T reference.fa
 rsomics-bam addreplacerg -r ID:lane1 -r SM:sample input.bam -o tagged.bam
 rsomics-bam bedcov targets.bed sample.bam
+rsomics-bam calmd -b -o recalculated.bam input.bam reference.fa
 rsomics-bam cat lane1.bam lane2.bam -o combined.bam
 rsomics-bam collate -m 128M -o grouped.bam input.bam
 rsomics-bam coverage -q 20 -Q 20 sample.bam
@@ -104,6 +106,12 @@ it accepts gzip-compressed BED and explicit BAI, CSI, or CRAI paths. `idxstats`
 uses index metadata when available and otherwise validates a coordinate-sorted
 scan. Named outputs are transactional, and machine summaries use the shared
 `rsomics-help` JSON envelope. Histogram-only coverage modes are not exposed.
+`calmd` recalculates MD and NM for mapped records from an indexed reference.
+It accepts SAM, BAM, CRAM, and standard input, writes SAM or BAM, preserves
+mapped records without query sequence with an explicit warning, and can rewrite
+reference-matching query bases to `=`. Existing correct tags retain their
+position; corrected tags follow samtools replacement order. Named outputs are
+transactional. BAQ, mapping-quality adjustment, and CRAM output are not exposed.
 `markdup` consumes coordinate-sorted output from `fixmate -m`, marks or removes
 duplicates, and supports template and sequence decision modes. It preserves
 SAM, BAM, and CRAM input semantics while producing transactional BAM output.

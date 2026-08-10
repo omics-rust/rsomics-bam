@@ -1,5 +1,6 @@
 pub(crate) mod addreplacerg;
 pub(crate) mod bedcov;
+pub(crate) mod calmd;
 pub(crate) mod cat;
 pub(crate) mod collate;
 pub(crate) mod coverage;

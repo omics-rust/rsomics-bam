@@ -5,8 +5,8 @@ use rsomics_common::{OutputArgs, Result, ToolMeta, run as run_tool};
 use serde::Serialize;
 
 use crate::{
-    addreplacerg, bedcov, cat, collate, commands, coverage, depth, fixmate, flags, flagstat, head,
-    idxstats, index, markdup, merge, mpileup, quickcheck, reheader, samples, sort, view,
+    addreplacerg, bedcov, calmd, cat, collate, commands, coverage, depth, fixmate, flags, flagstat,
+    head, idxstats, index, markdup, merge, mpileup, quickcheck, reheader, samples, sort, view,
 };
 
 const META: ToolMeta = ToolMeta {
@@ -35,6 +35,8 @@ enum Command {
     Addreplacerg(commands::addreplacerg::Arguments),
     /// Report coverage totals over BED regions
     Bedcov(commands::bedcov::Arguments),
+    /// Recalculate alignment MD and NM tags
+    Calmd(commands::calmd::Arguments),
     /// Concatenate BAM files without reencoding alignment blocks
     Cat(commands::cat::Arguments),
     /// Group alignments by read name with bounded memory
@@ -84,6 +86,7 @@ enum Command {
 pub(crate) enum CommandOutput {
     Addreplacerg { summary: addreplacerg::Summary },
     Bedcov { summary: bedcov::Summary },
+    Calmd { summary: calmd::Summary },
     Cat { summary: cat::Summary },
     Collate { summary: collate::Summary },
     Coverage { report: coverage::Report },
@@ -120,6 +123,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
             commands::addreplacerg::execute(arguments, cli.output.json)
         }
         Command::Bedcov(arguments) => commands::bedcov::execute(arguments, cli.output.json),
+        Command::Calmd(arguments) => commands::calmd::execute(arguments, cli.output.json),
         Command::Cat(arguments) => commands::cat::execute(arguments, cli.output.json),
         Command::Collate(arguments) => commands::collate::execute(arguments, cli.output.json),
         Command::Coverage(arguments) => commands::coverage::execute(arguments, cli.output.json),
@@ -314,6 +318,27 @@ mod tests {
                 .to_string();
         for option in ["-X", "-o, --output", "-@, --threads", "--reference"] {
             assert!(idxstats.contains(option), "missing {option} in {idxstats}");
+        }
+    }
+
+    #[test]
+    fn calmd_help_exposes_only_the_stable_recalculation_slice() {
+        let help = rsomics_help::try_parse_from::<Cli, _, _>(["rsomics-bam", "calmd", "--help"])
+            .unwrap_err()
+            .to_string();
+        for option in [
+            "-e, --convert-equal",
+            "-b, --bam",
+            "-u, --uncompressed",
+            "-O, --output-fmt",
+            "-o, --output",
+            "-@, --threads",
+            "--no-pg",
+        ] {
+            assert!(help.contains(option), "missing {option} in {help}");
+        }
+        for excluded in ["--baq", "--extended-baq", "--cap-mapq", "--output-cram"] {
+            assert!(!help.contains(excluded), "unexpected {excluded} in {help}");
         }
     }
 

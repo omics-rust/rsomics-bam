@@ -82,6 +82,7 @@ jobs:
       - name: Test compatibility oracle
         if: matrix.target == 'linux-x86_64'
         run: |
+          cargo test --locked --test calmd_compat -- --ignored
           cargo test --locked --test collate -- --ignored
           cargo test --locked --test cat_reheader_compat
           cargo test --locked --test compat -- --ignored

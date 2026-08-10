@@ -5,7 +5,7 @@ use std::path::Path;
 
 use noodles::{bam, bgzf, core::Region, cram, fasta, sam};
 use noodles_util::alignment;
-use rsomics_bamio::raw::{RawRecord, RawRecordEncoder, RecordReader, RecordRef};
+use rsomics_bamio::raw::{self, RawRecord, RawRecordEncoder, RecordReader, RecordRef};
 use rsomics_bamio::{IndexedAlignmentReader, open_indexed_alignment};
 use rsomics_common::{Context, Result, RsomicsError};
 
@@ -177,6 +177,20 @@ impl Reader {
         })
     }
 
+    pub(crate) fn visit_mut_raw_bam_records(
+        &mut self,
+        input: &Path,
+        visit: impl FnMut(&mut RawRecord) -> Result<bool>,
+    ) -> Result<()> {
+        match &mut self.inner {
+            Inner::Bam(reader) => visit_mut_raw_records(reader.get_mut(), input, visit),
+            Inner::BamRaw(reader) => visit_mut_raw_records(reader.get_mut(), input, visit),
+            _ => Err(RsomicsError::ConfigError(
+                "mutable raw records require BAM input".to_owned(),
+            )),
+        }
+    }
+
     pub(crate) fn visit_region(
         &mut self,
         header: &sam::Header,
@@ -251,6 +265,23 @@ fn visit_owned_raw_records(
         .rs_with_context(|| format!("reading alignment record from {}", input.display()))?
     {
         if !visit(RawRecord::try_from(record.payload().to_vec())?)? {
+            break;
+        }
+    }
+    Ok(())
+}
+
+fn visit_mut_raw_records(
+    reader: &mut impl Read,
+    input: &Path,
+    mut visit: impl FnMut(&mut RawRecord) -> Result<bool>,
+) -> Result<()> {
+    let mut record = RawRecord::default();
+    while raw::read_record(reader, &mut record)
+        .rs_with_context(|| format!("reading alignment record from {}", input.display()))?
+        != 0
+    {
+        if !visit(&mut record)? {
             break;
         }
     }
