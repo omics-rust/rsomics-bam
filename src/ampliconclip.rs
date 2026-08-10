@@ -14,7 +14,7 @@ use serde::Serialize;
 use crate::amplicon::{PrimerBed, Strand};
 use crate::output::{Compression, Format, Writer};
 use crate::{Program, input};
-use record::{Clipping, active_query_len, clip_left, clip_right, end_position, unmap};
+use record::{Clipping, active_query_len, clip_left, clip_right, end_position, unmap, validate};
 
 const FLAG_UNMAPPED: u16 = 0x04;
 const FLAG_REVERSE: u16 = 0x10;
@@ -144,7 +144,7 @@ pub fn write(
     let compression = if options.uncompressed {
         Compression::Uncompressed
     } else {
-        Compression::Default
+        Compression::Fast
     };
     let mut writer = Writer::new(Format::Bam, compression, options.additional_threads, output);
     writer.write_header(&header)?;
@@ -156,7 +156,11 @@ pub fn write(
         })
         .transpose()?;
 
-    let (mut indices, reference_lookup, mut counts) = build_indices(&bed);
+    let (indices, reference_names_to_sites, mut counts) = build_indices(&bed);
+    let reference_lookup: Vec<Option<usize>> = reference_names
+        .iter()
+        .map(|name| reference_names_to_sites.get(name).copied())
+        .collect();
     let clipping = match options.mode {
         ClipMode::Soft => Clipping::Soft,
         ClipMode::Hard => Clipping::Hard,
@@ -164,7 +168,7 @@ pub fn write(
     let mut summary = Summary::default();
     let mut previous_coordinate = None;
 
-    reader.visit_owned_raw_records(&header, input_path, |mut record| {
+    reader.visit_mut_raw_bam_records(input_path, |record| {
         summary.total += 1;
         let coordinate = (record.reference_sequence_id(), record.alignment_start());
         if coordinate.0 >= 0 {
@@ -180,14 +184,14 @@ pub fn write(
         let reference_id = record.reference_sequence_id();
         let site_index = usize::try_from(reference_id)
             .ok()
-            .and_then(|index| reference_names.get(index))
-            .and_then(|name| reference_lookup.get(name).copied());
+            .and_then(|index| reference_lookup.get(index).copied().flatten());
         let mut filtered = false;
         let mut was_clipped = false;
 
         if !excluded {
+            validate(record)?;
             if let Some(site_index) = site_index {
-                let sites = &mut indices[site_index];
+                let sites = &indices[site_index];
                 if options.both_ends {
                     let left = matching_site(
                         sites,
@@ -198,25 +202,25 @@ pub fn write(
                     );
                     if let Some((bases, primer)) = left {
                         if options.original {
-                            add_original_tag(&mut record, &reference_names)?;
+                            add_original_tag(record, &reference_names)?;
                         }
-                        record = clip_left(&record, bases, clipping)?;
+                        *record = clip_left(record, bases, clipping)?;
                         counts[site_index][primer] += 1;
                         summary.forward_clipped += 1;
                         was_clipped = true;
                     }
                     let right = matching_site(
                         sites,
-                        end_position(&record)?,
+                        end_position(record)?,
                         true,
                         options.use_strand,
                         options.tolerance,
                     );
                     if let Some((bases, primer)) = right {
                         if options.original && !was_clipped {
-                            add_original_tag(&mut record, &reference_names)?;
+                            add_original_tag(record, &reference_names)?;
                         }
-                        record = clip_right(&record, bases, clipping)?;
+                        *record = clip_right(record, bases, clipping)?;
                         counts[site_index][primer] += 1;
                         summary.reverse_clipped += 1;
                         if was_clipped {
@@ -227,7 +231,7 @@ pub fn write(
                 } else {
                     let reverse = record.flags() & FLAG_REVERSE != 0;
                     let position = if reverse {
-                        end_position(&record)?
+                        end_position(record)?
                     } else {
                         i64::from(record.alignment_start())
                     };
@@ -239,14 +243,14 @@ pub fn write(
                         options.tolerance,
                     ) {
                         if options.original {
-                            add_original_tag(&mut record, &reference_names)?;
+                            add_original_tag(record, &reference_names)?;
                         }
-                        record = if reverse {
+                        *record = if reverse {
                             summary.reverse_clipped += 1;
-                            clip_right(&record, bases, clipping)?
+                            clip_right(record, bases, clipping)?
                         } else {
                             summary.forward_clipped += 1;
-                            clip_left(&record, bases, clipping)?
+                            clip_left(record, bases, clipping)?
                         };
                         counts[site_index][primer] += 1;
                         was_clipped = true;
@@ -264,7 +268,7 @@ pub fn write(
                 record.remove_aux(*b"MD");
             }
 
-            let length = active_query_len(&record)?;
+            let length = active_query_len(record)?;
             if options.fail_length.is_some_and(|limit| length <= limit) {
                 record.set_flag_bits(FLAG_QC_FAIL);
             }
@@ -272,7 +276,7 @@ pub fn write(
                 filtered = true;
             }
             if options.unmap_length.is_some_and(|limit| length <= limit) {
-                record = unmap(&record)?;
+                *record = unmap(record)?;
             }
             if record.flags() & FLAG_QC_FAIL != 0 {
                 summary.failed += 1;
@@ -290,11 +294,11 @@ pub fn write(
         if filtered {
             summary.filtered += 1;
             if let Some(writer) = &mut reject_writer {
-                writer.write_owned_raw_record(&record)?;
+                writer.write_owned_raw_record(record)?;
             }
         } else {
             summary.written += 1;
-            writer.write_owned_raw_record(&record)?;
+            writer.write_owned_raw_record(record)?;
         }
         Ok(true)
     })?;

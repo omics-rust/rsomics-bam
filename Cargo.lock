@@ -1097,6 +1097,7 @@ dependencies = [
  "same-file",
  "serde",
  "serde_json",
+ "smallvec",
  "tempfile",
 ]
 

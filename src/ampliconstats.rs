@@ -2,16 +2,42 @@ mod model;
 mod output;
 
 use std::collections::{BTreeMap, HashMap};
+use std::hash::{BuildHasherDefault, Hasher};
 use std::io::Write;
 use std::path::Path;
 
 use rsomics_common::{Result, RsomicsError};
 use serde::Serialize;
 
-use crate::alignment_order::validate_record_coordinates;
+use crate::alignment_order::validate_coordinate_fields;
 use crate::amplicon::PrimerBed;
 use crate::input;
 use model::Amplicon;
+
+type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FnvHasher>>;
+
+struct FnvHasher(u64);
+
+impl Default for FnvHasher {
+    fn default() -> Self {
+        Self(0xcbf2_9ce4_8422_2325)
+    }
+}
+
+impl Hasher for FnvHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        let mut hash = self.0;
+        for byte in bytes {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        self.0 = hash;
+    }
+}
 
 pub const MAX_DEPTH_LEVELS: usize = 5;
 
@@ -78,7 +104,7 @@ struct AmpStats {
     coverage: Vec<i64>,
     covered_perc: Vec<[f64; MAX_DEPTH_LEVELS]>,
     covered_perc2: Vec<[f64; MAX_DEPTH_LEVELS]>,
-    tcoord: Vec<HashMap<u64, u64>>,
+    tcoord: Vec<FastMap<u64, u64>>,
     amp_dist: Vec<[i64; 3]>,
     depth_all: Vec<i64>,
     depth_valid: Vec<i64>,
@@ -109,7 +135,7 @@ impl AmpStats {
             coverage: vec![0; coverage_len],
             covered_perc: vec![[0.0; MAX_DEPTH_LEVELS]; max_amp],
             covered_perc2: vec![[0.0; MAX_DEPTH_LEVELS]; max_amp],
-            tcoord: (0..=max_amp).map(|_| HashMap::new()).collect(),
+            tcoord: (0..=max_amp).map(|_| FastMap::default()).collect(),
             amp_dist: vec![[0; 3]; max_amp],
             depth_all: vec![0; ref_len],
             depth_valid: vec![0; ref_len],
@@ -212,13 +238,11 @@ impl PosLookup {
 struct PendingPair {
     start: i64,
     end: i64,
-    expected_start: i64,
 }
 
 #[derive(Default)]
 struct PairTracker {
-    pending: HashMap<Vec<u8>, PendingPair>,
-    expirations: BTreeMap<i64, Vec<Vec<u8>>>,
+    pending: BTreeMap<i64, FastMap<Vec<u8>, PendingPair>>,
 }
 
 impl PairTracker {
@@ -231,40 +255,38 @@ impl PairTracker {
         mate_start: i64,
     ) -> Option<(i64, i64)> {
         self.evict_before(start);
-        if let Some(pair) = self.pending.remove(name) {
+        let mut empty = false;
+        let pair = same_reference
+            .then(|| {
+                self.pending.get_mut(&start).and_then(|pairs| {
+                    let pair = pairs.remove(name);
+                    empty = pairs.is_empty();
+                    pair
+                })
+            })
+            .flatten();
+        if empty {
+            self.pending.remove(&start);
+        }
+        if let Some(pair) = pair {
             return Some((pair.start, pair.end));
         }
         if same_reference && mate_start >= start {
-            let name = name.to_vec();
-            self.pending.insert(
-                name.clone(),
-                PendingPair {
-                    start,
-                    end,
-                    expected_start: mate_start,
-                },
-            );
-            self.expirations.entry(mate_start).or_default().push(name);
+            self.pending
+                .entry(mate_start)
+                .or_default()
+                .insert(name.to_vec(), PendingPair { start, end });
         }
         None
     }
 
     fn evict_before(&mut self, position: i64) {
         while self
-            .expirations
+            .pending
             .first_key_value()
             .is_some_and(|(&expiry, _)| expiry < position)
         {
-            let (expiry, names) = self.expirations.pop_first().unwrap();
-            for name in names {
-                if self
-                    .pending
-                    .get(&name)
-                    .is_some_and(|pair| pair.expected_start == expiry)
-                {
-                    self.pending.remove(&name);
-                }
-            }
+            self.pending.pop_first();
         }
     }
 }
@@ -361,8 +383,13 @@ fn accumulate_record(
     if is_paired
         && !is_supplementary
         && !is_secondary
-        && let Some((ps, pe)) =
-            pair_tracker.observe(qname, start, end, same_mate_reference, mate_start)
+        && let Some((ps, pe)) = pair_tracker.observe(
+            qname,
+            start,
+            end,
+            same_mate_reference && !mate_unmapped,
+            mate_start,
+        )
     {
         prev_start = ps;
         prev_end = pe;
@@ -750,11 +777,17 @@ pub fn write(
             (0..nref_bam).map(|_| PairTracker::default()).collect();
         let mut previous_coordinate = None;
         let mut cigar = Vec::new();
-        reader.visit_owned_raw_records(&input_header, bam_path, |rec| {
+        reader.visit_raw_bam_records(bam_path, |rec| {
             record_count = record_count.checked_add(1).ok_or_else(|| {
                 RsomicsError::InvalidInput("alignment record count exceeds u64".to_owned())
             })?;
-            validate_record_coordinates(&rec, nref_bam)?;
+            validate_coordinate_fields(
+                rec.reference_sequence_id(),
+                rec.alignment_start(),
+                rec.mate_reference_sequence_id(),
+                rec.mate_alignment_start(),
+                nref_bam,
+            )?;
             let ref_id = rec.reference_sequence_id();
             if ref_id < 0 {
                 return Ok(true);
@@ -918,6 +951,25 @@ mod tests {
         tracker.observe(b"pair", 10, 30, true, 20);
         assert_eq!(tracker.observe(b"pair", 20, 40, true, 10), Some((10, 30)));
         assert!(tracker.pending.is_empty());
+    }
+
+    #[test]
+    fn mates_sharing_an_expected_coordinate_are_tracked_independently() {
+        let mut tracker = PairTracker::default();
+        tracker.observe(b"first", 10, 30, true, 20);
+        tracker.observe(b"second", 11, 31, true, 20);
+
+        assert_eq!(tracker.observe(b"first", 20, 40, true, 10), Some((10, 30)));
+        assert_eq!(tracker.observe(b"second", 20, 41, true, 11), Some((11, 31)));
+        assert!(tracker.pending.is_empty());
+    }
+
+    #[test]
+    fn inconsistent_mate_metadata_does_not_form_a_pair() {
+        let mut tracker = PairTracker::default();
+        tracker.observe(b"pair", 10, 30, true, 20);
+
+        assert_eq!(tracker.observe(b"pair", 20, 40, false, 10), None);
     }
 
     #[test]
