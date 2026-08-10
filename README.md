@@ -16,8 +16,10 @@ cargo install rsomics-bam
 | Command | Purpose |
 |---|---|
 | `addreplacerg` | Add or replace header read groups and record RG tags |
+| `bedcov` | Append alignment coverage totals to BED regions |
 | `cat` | Concatenate BAM files without reencoding alignment blocks |
 | `collate` | Group all alignments for each read name with bounded memory |
+| `coverage` | Summarize reads, breadth, depth, and quality by reference |
 | `depth` | Compute one per-input depth column at each position |
 | `flags` | Convert numeric and symbolic SAM flags |
 | `flagstat` | Count records by SAM flag category |
@@ -27,6 +29,7 @@ cargo install rsomics-bam
 | `head` | Print alignment headers and leading records as SAM |
 | `index` | Build BAI, CSI, or CRAI random-access indexes |
 | `import` | Convert FASTQ reads to unmapped SAM or BAM |
+| `idxstats` | Report mapped and unmapped counts from an index or sorted scan |
 | `merge` | Merge ordered alignment files into BAM |
 | `markdup` | Mark or remove duplicate alignments in coordinate order |
 | `mpileup` | Generate per-position text pileup |
@@ -40,13 +43,16 @@ cargo install rsomics-bam
 rsomics-bam view -b -@ 4 -q 20 -o selected.bam input.bam
 rsomics-bam view -c -F UNMAP,SECONDARY input.cram -T reference.fa
 rsomics-bam addreplacerg -r ID:lane1 -r SM:sample input.bam -o tagged.bam
+rsomics-bam bedcov targets.bed sample.bam
 rsomics-bam cat lane1.bam lane2.bam -o combined.bam
 rsomics-bam collate -m 128M -o grouped.bam input.bam
+rsomics-bam coverage -q 20 -Q 20 sample.bam
 rsomics-bam depth -a -b targets.bed sample.bam
 rsomics-bam fastq -o reads.fq.bgzf name-sorted.bam
 rsomics-bam fixmate -m grouped.bam -o fixed.bam
 rsomics-bam index -c -m 14 sample.bam
 rsomics-bam import read1.fastq read2.fastq -@ 4 -o unmapped.bam
+rsomics-bam idxstats sample.bam
 rsomics-bam merge lane1.bam lane2.cram --reference reference.fa -o merged.bam
 rsomics-bam markdup -r fixed-and-sorted.bam -o deduplicated.bam
 rsomics-bam mpileup -f reference.fa -Q 20 input.bam
@@ -89,6 +95,15 @@ group the only header read group; orphan mode preserves existing groups and
 tags. Same-ID header replacement requires `-w`. Named output is transactional.
 CRAM output, automatic indexing, and HTSlib format-option strings are not yet
 exposed.
+`coverage` emits the complete nine-column reference summary for SAM, BAM, and
+CRAM, including filtered read counts, covered bases, mean depth, and mean base
+and mapping qualities. It accepts multiple inputs, input lists, standard input,
+and indexed regions. `bedcov` preserves BED row order while appending one
+coverage total per input, with optional depth-threshold and read-count columns;
+it accepts gzip-compressed BED and explicit BAI, CSI, or CRAI paths. `idxstats`
+uses index metadata when available and otherwise validates a coordinate-sorted
+scan. Named outputs are transactional, and machine summaries use the shared
+`rsomics-help` JSON envelope. Histogram-only coverage modes are not exposed.
 `markdup` consumes coordinate-sorted output from `fixmate -m`, marks or removes
 duplicates, and supports template and sequence decision modes. It preserves
 SAM, BAM, and CRAM input semantics while producing transactional BAM output.
@@ -115,6 +130,8 @@ passes validation. It uses up to four additional workers when `-@` is omitted;
 pass `-@ 0` for one-thread sorting.
 
 Stable behavior is tested against samtools 1.24 across SAM, BAM, and CRAM.
+Coverage summaries, BED coverage totals, custom indexes, filtering, depth
+limits, regions, and CRAM quality semantics are byte-matched to samtools 1.24.
 Read-group editing is field-matched across new, existing, implicit, overwrite,
 orphan, SAM, BAM, CRAM, and non-string-tag cases.
 FASTQ import is field-matched for positional and explicit input modes, read
