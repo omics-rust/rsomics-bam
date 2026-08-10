@@ -705,6 +705,94 @@ Both binaries rejected a conflicting header ID without `-w`, and the installed
 binary emitted the shared JSON envelope with the expected three-record
 summary.
 
+## Coverage summary benchmark
+
+The 2026-08-10 gate used revision
+`981d4e91c623684d1aa123ca3f909ee8110541cb` and samtools/HTSlib 1.24 on an
+Apple M2 Mac mini with 8 GiB of memory. Commands used their default
+single-threaded behavior. Timed pairs alternated command order, and every
+operation first produced a complete byte-identical output file.
+
+The coordinate-sorted BAM contained 4,000,000 records and was 92,673,552
+bytes. Its SHA-256 was
+`bc2257da48b4c06da643edafbec1a383e946b7d1a0c0dd09dc21edc48dc2ef2d`.
+The explicit BAI SHA-256 was
+`d207836008a4cb7f75384ec2e357d0eecc75eb1d7876509a190de2082c958385`.
+
+### Coverage
+
+Ten full-reference pairs compared the complete nine-column table.
+
+| Tool | Mean wall time | Mean user time | Mean system time | Mean peak RSS |
+|---|---:|---:|---:|---:|
+| `rsomics-bam coverage` | 3.155 s | 2.956 s | 0.074 s | 4,207,411 bytes |
+| `samtools coverage` | 3.469 s | 3.282 s | 0.080 s | 6,565,069 bytes |
+
+`rsomics-bam` won 9 of 10 pairs, was 1.10 times as fast by mean wall time,
+and used 35.9% less mean peak RSS. The paired rsomics-minus-samtools
+difference was -0.3140 seconds with a 0.1255-second sample standard deviation
+and a -7.915 t-statistic. The identical output SHA-256 was
+`eacdc4e84b06f55ffe38aa2986e910b1ecd8c8c525d06243e6e3be250b68d3f5`.
+
+### BED coverage
+
+The dense input contained 50,001 adjacent BED rows covering the reference;
+its SHA-256 was
+`0a285ac162bbb3e2077cdc0ba090a77cd32f97ebd4a0e51b8a087318fd765e3c`.
+Five pairs exercised the ordered sweep path. The sparse input contained 10
+rows and had SHA-256
+`59037abb519691a2ab28435871c1d646b3d9e50b734790553a2328246160e12d`.
+Thirty pairs batched 100 command invocations per timing sample and report the
+per-invocation mean.
+
+| Workload and tool | Mean wall time | Mean user time | Mean system time | Mean peak RSS |
+|---|---:|---:|---:|---:|
+| dense `rsomics-bam bedcov` | 0.792 s | 0.700 s | 0.026 s | 15,253,504 bytes |
+| dense `samtools bedcov` | 8.238 s | 7.650 s | 0.342 s | 7,159,808 bytes |
+| sparse `rsomics-bam bedcov` | 4.750 ms | 2.393 ms | 1.570 ms | 5,268,548 bytes |
+| sparse `samtools bedcov` | 6.923 ms | 3.937 ms | 2.043 ms | 7,022,182 bytes |
+
+The dense sweep won all five pairs and was 10.40 times as fast while using
+2.13 times the peak RSS. The paired difference was -7.446 seconds with a
+0.1126-second sample standard deviation. The sparse indexed path won all 30
+pairs, was 1.46 times as fast, and used 25.0% less peak RSS. Its paired
+difference was -2.173 ms with a 0.139-ms sample standard deviation. Dense and
+sparse output SHA-256 values were
+`2c1ddd98ae0504e40d7fc74a9e2c440516f2a3a8d5bb6fdbb10bce390f8a9954`
+and
+`b6720a48828b19dc4e44502ce33c5125ed1e9f8176dd80829c415d938691bee8`.
+
+### Index statistics
+
+Thirty pairs batched 100 explicit-index invocations per timing sample.
+
+| Tool | Mean wall time | Mean user time | Mean system time | Mean peak RSS |
+|---|---:|---:|---:|---:|
+| `rsomics-bam idxstats` | 3.773 ms | 1.573 ms | 1.443 ms | 4,992,751 bytes |
+| `samtools idxstats` | 5.440 ms | 2.700 ms | 1.917 ms | 6,646,443 bytes |
+
+`rsomics-bam` won all 30 pairs, was 1.44 times as fast, and used 24.9% less
+peak RSS. The paired difference was -1.667 ms with a 0.137-ms sample standard
+deviation. The identical output SHA-256 was
+`3a4e5fd538257de057d5f4a8264a8cc559bc5ef91cb93811f83e5414b9e79f03`.
+
+The measured rsomics and samtools binaries had SHA-256 values
+`746be956ec1df5e3c3bbf508d76d8bc1f327b7836593ad0eff7ac2130993cbe0`
+and `c265b440b09c4b21d1f25a65963cf907b0d9f9d18caa9382c31104158f89d027`.
+The coverage, dense BED, sparse BED, and index-statistics timing ledgers had
+SHA-256 values
+`5dda03b3b910eec489be629db5f96a1e30d0a3995bfb30a26879813f3dd2c0da`,
+`f8541465617dc60f7b3fa965070dae6d128c406671222e5d8b75900ebb31d65e`,
+`000871b3e68cf0a635ae9c0475057185d02e47dce4e0f2e229bb68db2925f6c4`,
+and `dff4375e8000743761e77733f61fd1ee07df76017551b8a072e8979d0dbaf963`.
+
+These results establish the default single-BAM summary paths on this fixture.
+SAM, CRAM, multiple-input, filtered, region, threshold, and read-count behavior
+is covered by compatibility tests but carries no throughput claim here. The
+dense sweep trades a small bounded memory increase for its throughput gain;
+other BED layouts and unusually deep data can select the indexed or pileup
+path instead.
+
 ## Reproduction
 
 `benchmarks/view-vs-samtools.sh` records the machine, tool versions, binary and
@@ -775,6 +863,27 @@ RSOMICS_COMMIT=83b73a0 benchmarks/merge-vs-samtools-macos.sh \
 ```
 
 Use `equal-workers` as the mode to pass four additional workers to both tools.
+
+`benchmarks/stats-vs-samtools-macos.sh` compares `coverage`, `idxstats`, or
+`bedcov`, rejects any bytewise output difference, records checksums and macOS
+resource usage, and alternates command order. Fast operations use a batch so
+each timing sample exceeds the timer resolution:
+
+```sh
+RSOMICS_COMMIT=981d4e9 benchmarks/stats-vs-samtools-macos.sh \
+  target/release/rsomics-bam /path/to/samtools coverage input.bam \
+  /path/to/results/coverage 10
+
+BENCH_BATCH=100 RSOMICS_COMMIT=981d4e9 \
+  benchmarks/stats-vs-samtools-macos.sh \
+  target/release/rsomics-bam /path/to/samtools idxstats input.bam \
+  /path/to/results/idxstats 30 '' input.bam.bai
+
+BENCH_BATCH=100 RSOMICS_COMMIT=981d4e9 \
+  benchmarks/stats-vs-samtools-macos.sh \
+  target/release/rsomics-bam /path/to/samtools bedcov input.bam \
+  /path/to/results/bedcov 30 targets.bed input.bam.bai
+```
 The final order argument is one of `coordinate`, `natural`,
 `lexicographical`, or `template-coordinate`.
 
