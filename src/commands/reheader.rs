@@ -1,4 +1,4 @@
-use std::io::{self, BufWriter};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use clap::Args;
@@ -57,7 +57,7 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
                 &arguments.header,
                 &arguments.input,
                 options,
-                BufWriter::new(transaction.reopen()?),
+                transaction.reopen()?,
             )?;
             hts_quickcheck::require_bgzf_eof(transaction.temporary_path())?;
             transaction.commit()?;

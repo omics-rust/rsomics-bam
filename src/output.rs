@@ -99,10 +99,6 @@ impl<'a> TransactionalFile<'a> {
                 .set_permissions(permissions)
                 .map_err(RsomicsError::Io)?;
         }
-        self.temporary
-            .as_file_mut()
-            .sync_all()
-            .map_err(RsomicsError::Io)?;
         self.temporary.persist(self.target).map_err(|error| {
             RsomicsError::Io(io::Error::new(
                 error.error.kind(),

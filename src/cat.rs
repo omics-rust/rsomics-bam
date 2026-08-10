@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use noodles::sam;
@@ -7,6 +7,8 @@ use serde::Serialize;
 
 use crate::output::same_target;
 use crate::{Program, bgzf_rewrite, header_source, hts_quickcheck, input};
+
+const OUTPUT_BUFFER: usize = 2 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Options<'a> {
@@ -22,7 +24,7 @@ pub struct Summary {
     pub output: Option<PathBuf>,
 }
 
-pub fn write<W: Write>(inputs: &[PathBuf], options: Options<'_>, mut output: W) -> Result<Summary> {
+pub fn write<W: Write>(inputs: &[PathBuf], options: Options<'_>, output: W) -> Result<Summary> {
     if inputs.is_empty() {
         return Err(RsomicsError::ConfigError(
             "cat requires at least one BAM input".to_owned(),
@@ -94,6 +96,7 @@ pub fn write<W: Write>(inputs: &[PathBuf], options: Options<'_>, mut output: W) 
         header_source::append_line(&mut text, line);
     }
 
+    let mut output = BufWriter::with_capacity(OUTPUT_BUFFER, output);
     bgzf_rewrite::write_header(&mut output, &header, &text)?;
     for path in inputs {
         bgzf_rewrite::copy_records(path, &mut output)?;
