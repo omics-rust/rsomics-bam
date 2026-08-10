@@ -608,6 +608,24 @@ workers on this fixture. They do not claim the same advantage for compressed
 input, SAM output, auxiliary-tag extraction, other thread counts, or materially
 different read lengths and entropy.
 
+Release 0.14.0 was published from revision
+`d54924462ad65d4a0781545e6511f7bc3a8becb8` after exact-head CI
+`31383580026` passed on native Linux and macOS for x86_64 and aarch64. Its
+Linux x86_64 gate rebuilt samtools 1.24 and ran the complete product oracle,
+including the import matrix. Publication workflow `31384051315` produced an
+unyanked 162,589-byte registry archive with SHA-256
+`d092eb6d53b301d1e9be0d9e17671502f66d216d1e5b3eb63e4f311da442dcef`;
+its VCS metadata identifies the exact release revision.
+
+A fresh registry install reports 0.14.0 and exposes `import` through the shared
+help tree. Installed single-end SAM, gzip standard input, and paired BAM output
+match samtools 1.24 after removing program and comment header records. The
+stable single-end SAM, paired header, and complete paired record stream have
+SHA-256 values `b3a74cf2ac8815237013ca55b9d2c3c466d5f651fb1abd92c749d02a714d7e37`,
+`ea48c78110bc71ed96dd0346c56b395e341e562efd046edf9393bc12823267df`,
+and `2a07f119149d2b36ca6415b0735a35bb0cb1ff9fbbf34506d3933b85e8f70f64`.
+The installed binary also rejects non-IUPAC FASTQ input with a nonzero exit.
+
 ## Reproduction
 
 `benchmarks/view-vs-samtools.sh` records the machine, tool versions, binary and
