@@ -3,7 +3,7 @@
 `rsomics-bam` is a single command-line product for SAM, BAM, and CRAM
 inspection, filtering, conversion, validation, collation, mate repair, sorting,
 compressed file editing, read-group editing, duplicate marking, FASTQ import,
-and pileup workflows.
+padded-reference projection, and pileup workflows.
 
 ## Install
 
@@ -21,6 +21,7 @@ cargo install rsomics-bam
 | `cat` | Concatenate BAM files without reencoding alignment blocks |
 | `collate` | Group all alignments for each read name with bounded memory |
 | `coverage` | Summarize reads, breadth, depth, and quality by reference |
+| `depad` | Project padded-reference alignments into unpadded coordinates |
 | `depth` | Compute one per-input depth column at each position |
 | `flags` | Convert numeric and symbolic SAM flags |
 | `flagstat` | Count records by SAM flag category |
@@ -49,6 +50,7 @@ rsomics-bam calmd -b -o recalculated.bam input.bam reference.fa
 rsomics-bam cat lane1.bam lane2.bam -o combined.bam
 rsomics-bam collate -m 128M -o grouped.bam input.bam
 rsomics-bam coverage -q 20 -Q 20 sample.bam
+rsomics-bam depad -T padded.fa -@ 4 -o unpadded.bam padded.bam
 rsomics-bam depth -a -b targets.bed sample.bam
 rsomics-bam fastq -o reads.fq.bgzf name-sorted.bam
 rsomics-bam fixmate -m grouped.bam -o fixed.bam
@@ -112,6 +114,12 @@ mapped records without query sequence with an explicit warning, and can rewrite
 reference-matching query bases to `=`. Existing correct tags retain their
 position; corrected tags follow samtools replacement order. Named outputs are
 transactional. BAQ, mapping-quality adjustment, and CRAM output are not exposed.
+`depad` removes padded-reference columns from alignment coordinates, CIGARs,
+mate positions, and reference lengths. It accepts SAM, BAM, no-reference CRAM,
+and standard input and writes SAM or BAM. A padded FASTA supplied with `-T` is
+indexed in memory without creating a sidecar; without it, embedded reference
+records drive projection and header lengths remain padded. Named output is
+transactional. Reference-backed CRAM input and CRAM output are not exposed.
 `markdup` consumes coordinate-sorted output from `fixmate -m`, marks or removes
 duplicates, and supports template and sequence decision modes. It preserves
 SAM, BAM, and CRAM input semantics while producing transactional BAM output.

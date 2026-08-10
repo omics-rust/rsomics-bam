@@ -870,7 +870,65 @@ the one-million-record fixture completed all records, passed `samtools
 quickcheck`, and reproduced decoded-output SHA-256
 `d1e0cfd0c1f1c1c88482e7140efc505ef323b0027ef1fac89be4c0b49d978eb9`.
 
+## Padded-reference projection benchmark
+
+The 2026-08-11 gate used feature revision
+`e1b8f89eed742984472d7230d0d65b17b4ade5c5` and samtools/HTSlib 1.24 on an
+Apple M2 Mac mini with 8 GiB of memory. Both tools read and wrote compressed
+BAM with four additional I/O workers and the same padded FASTA. One complete
+warm-up per tool preceded 20 timed pairs; command order alternated between
+pairs.
+
+```text
+rsomics-bam depad --no-pg -@ 4 -T padded.fa -o rsomics.bam padded.bam
+samtools depad --no-PG --threads 4 -T padded.fa -o samtools.bam padded.bam
+```
+
+| Tool | Mean wall time | Median wall time | Mean CPU time | Mean peak RSS |
+|---|---:|---:|---:|---:|
+| `rsomics-bam depad` | 0.3680 s | 0.3500 s | 0.6175 s | 60,659,302 bytes |
+| `samtools depad` | 0.6115 s | 0.6000 s | 0.5660 s | 37,438,259 bytes |
+
+`rsomics-bam` won all 20 pairs and was 1.66 times as fast by mean wall time.
+The paired samtools-minus-rsomics difference was 0.2435 seconds with a
+0.0469-second sample standard deviation and a 23.202 t-statistic. The faster
+path used 9.1% more mean CPU time and 62.0% more mean peak RSS.
+
+The fixture contained 1,000,000 records against a 5,000,000-column padded
+reference. The 4,034,944-byte BAM and 5,000,007-byte FASTA had SHA-256 values
+`97d7b42c390da771119510c018d319aac782cdcde509a4d32db7607e7c8ba31f`
+and `05895c75b94b2e8229bfdfa15cc16f084aa9c07d30807c9b22e286036a8e20a7`.
+Both outputs passed `samtools quickcheck`; their complete decoded headers and
+one million records had the identical SHA-256
+`b56d7863308db97b0b081782d1bc39a8805c8c1086b00c6ff72dee68e46de904`.
+BAM byte streams differed because their BGZF layouts differed.
+
+The measured rsomics binary was built with rustc 1.91.0 and had SHA-256
+`4d019db7157211f06b4d93e5e54960c93e00bccbc5ae77f2e1729b6a01616400`;
+the samtools binary SHA-256 was
+`c265b440b09c4b21d1f25a65963cf907b0d9f9d18caa9382c31104158f89d027`.
+The timing ledger, summary, environment record, and decoded-output checksum
+had SHA-256 values
+`c386254a38be9d681b08635ae43f2bc15a53ebaa8b48e70a81ee8047eb6e39b2`,
+`d8628dfd1e038c8c6b30417acfc38ed83d414fdb5cedb8e640506703467b6c50`,
+`b3ae52071871766ec36547f8a88926ce6926354ae968a4eb7b681b01d60ff2dd`,
+and `d09d1c3a484c19f98b77ade3072b5de5670cdcedb3c9e39ec6a65da22518d9c8`.
+These results establish the compressed BAM path with a supplied padded FASTA
+on this fixture. SAM, CRAM, embedded-reference projection, other worker
+counts, and materially different gap distributions carry no throughput claim
+here.
+
 ## Reproduction
+
+`benchmarks/depad-vs-samtools-macos.sh` compares padded-reference projection,
+alternates command order, and rejects malformed output or any complete decoded
+stream difference:
+
+```sh
+RSOMICS_COMMIT=e1b8f89 benchmarks/depad-vs-samtools-macos.sh \
+  target/release/rsomics-bam /path/to/samtools input.bam padded.fa \
+  /path/to/results 20 4
+```
 
 `benchmarks/calmd-vs-samtools-macos.sh` compares default compressed BAM
 recalculation, alternates command order, and rejects malformed output or any
