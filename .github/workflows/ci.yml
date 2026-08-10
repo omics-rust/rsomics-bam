@@ -96,3 +96,4 @@ jobs:
           cargo test --locked --test markdup --test markdup_compat
           cargo test --locked --test merge -- --ignored
           cargo test --locked --test sort -- --ignored
+          cargo test --locked --test stats -- --ignored

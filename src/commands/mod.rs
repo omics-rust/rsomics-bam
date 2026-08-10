@@ -24,6 +24,7 @@ pub(crate) mod quickcheck;
 pub(crate) mod reheader;
 pub(crate) mod samples;
 pub(crate) mod sort;
+pub(crate) mod stats;
 pub(crate) mod view;
 
 pub(crate) fn parse_memory(value: &str) -> std::result::Result<u64, String> {

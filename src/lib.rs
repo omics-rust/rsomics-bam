@@ -57,6 +57,8 @@ pub mod reheader;
 pub mod samples;
 /// Bounded-memory alignment sorting.
 pub mod sort;
+/// Comprehensive alignment statistics.
+pub mod stats;
 /// Alignment filtering and format conversion.
 pub mod view;
 

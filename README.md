@@ -42,6 +42,7 @@ cargo install rsomics-bam
 | `reheader` | Replace a BAM header without reencoding alignment blocks |
 | `samples` | List samples and other read-group metadata |
 | `sort` | Sort alignments with bounded memory and external runs |
+| `stats` | Produce comprehensive alignment statistics |
 | `view` | Filter records and convert to SAM or BAM |
 
 ```sh
@@ -68,6 +69,7 @@ rsomics-bam markdup -r fixed-and-sorted.bam -o deduplicated.bam
 rsomics-bam mpileup -f reference.fa -Q 20 input.bam
 rsomics-bam reheader replacement.sam input.bam -o reheadered.bam
 rsomics-bam sort -m 768M -o sorted.bam input.bam
+rsomics-bam stats -r reference.fa -o sample.bamstat sample.bam
 ```
 
 The commands accept SAM, BAM, and CRAM where their help declares those input
@@ -162,6 +164,14 @@ memory option is a total record budget, external merges use bounded fan-in,
 and named outputs replace their destination only after a complete BGZF stream
 passes validation. It uses up to four additional workers when `-@` is omitted;
 pass `-@ 0` for one-thread sorting.
+`stats` emits the complete samtools 1.24 alignment-statistics report for SAM,
+BAM, CRAM, and standard input. It supports references, target intervals,
+indexed regions and custom indexes, flag and read-group filters, mate-overlap
+removal, tagged split reports, reference statistics, and threaded BAM or CRAM
+decompression. Coverage and cycle state are streamed or sparse, split report
+cardinality is bounded, and named main and split outputs commit as one group.
+`--json` requires a named compatibility report and returns the typed report
+through the shared `rsomics-help` envelope.
 
 Stable behavior is tested against samtools 1.24 across SAM, BAM, and CRAM.
 Coverage summaries, BED coverage totals, custom indexes, filtering, depth
@@ -171,6 +181,9 @@ orphan, SAM, BAM, CRAM, and non-string-tag cases.
 FASTQ import is field-matched for positional and explicit input modes, read
 groups, order tags, compressed input, standard input, SAM, and BAM output.
 FASTA/FASTQ extraction also has bytewise stdin and historical-fixture checks.
+The full `stats` section order and stable body are byte-matched across the
+upstream CIGAR, target, overlap, barcode, split, reference-statistics, indexed
+region, and CRAM fixtures.
 Named alignment and pileup outputs are committed only after successful
 processing. See [PERFORMANCE.md](PERFORMANCE.md) for the representative BAM
 throughput, memory, and decoded-output gate.

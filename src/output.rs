@@ -62,9 +62,17 @@ impl<'a> TransactionalFile<'a> {
                 ),
             ))
         })?;
-        let permissions = fs::metadata(target)
-            .ok()
-            .map(|metadata| metadata.permissions());
+        let metadata = fs::metadata(target).ok();
+        if metadata
+            .as_ref()
+            .is_some_and(|metadata| !metadata.is_file())
+        {
+            return Err(RsomicsError::ConfigError(format!(
+                "output target is not a regular file: {}",
+                target.display()
+            )));
+        }
+        let permissions = metadata.map(|metadata| metadata.permissions());
         Ok(Self {
             target,
             temporary,
@@ -93,12 +101,7 @@ impl<'a> TransactionalFile<'a> {
     }
 
     pub(crate) fn commit(mut self) -> Result<()> {
-        if let Some(permissions) = self.permissions {
-            self.temporary
-                .as_file_mut()
-                .set_permissions(permissions)
-                .map_err(RsomicsError::Io)?;
-        }
+        self.apply_permissions()?;
         self.temporary.persist(self.target).map_err(|error| {
             RsomicsError::Io(io::Error::new(
                 error.error.kind(),
@@ -111,6 +114,101 @@ impl<'a> TransactionalFile<'a> {
         })?;
         Ok(())
     }
+
+    pub(crate) fn commit_all(mut transactions: Vec<Self>) -> Result<()> {
+        for transaction in &mut transactions {
+            transaction.apply_permissions()?;
+        }
+
+        let mut backups = Vec::new();
+        for transaction in &transactions {
+            if transaction.target.exists() {
+                let backup = reserve_backup_path(transaction.target)?;
+                if let Err(error) = fs::rename(transaction.target, &backup) {
+                    return restore_backups(backups, error);
+                }
+                backups.push((transaction.target.to_path_buf(), backup));
+            }
+        }
+
+        let mut committed = Vec::new();
+        for transaction in transactions {
+            let target = transaction.target.to_path_buf();
+            if let Err(error) = transaction.temporary.persist(&target) {
+                return rollback_outputs(committed, backups, error.error);
+            }
+            committed.push(target);
+        }
+        drop(backups);
+        Ok(())
+    }
+
+    fn apply_permissions(&mut self) -> Result<()> {
+        if let Some(permissions) = self.permissions.take() {
+            self.temporary
+                .as_file_mut()
+                .set_permissions(permissions)
+                .map_err(RsomicsError::Io)?;
+        }
+        Ok(())
+    }
+}
+
+fn reserve_backup_path(target: &Path) -> Result<tempfile::TempPath> {
+    let parent = target
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let backup = tempfile::NamedTempFile::new_in(parent)
+        .map_err(RsomicsError::Io)?
+        .into_temp_path();
+    fs::remove_file(&backup).map_err(RsomicsError::Io)?;
+    Ok(backup)
+}
+
+fn rollback_outputs(
+    committed: Vec<PathBuf>,
+    backups: Vec<(PathBuf, tempfile::TempPath)>,
+    cause: io::Error,
+) -> Result<()> {
+    let mut rollback_error = None;
+    for target in committed {
+        if let Err(error) = fs::remove_file(&target)
+            && error.kind() != io::ErrorKind::NotFound
+        {
+            rollback_error.get_or_insert(error);
+        }
+    }
+    for (target, backup) in backups {
+        if let Err(error) = fs::rename(&backup, &target) {
+            rollback_error.get_or_insert(error);
+        }
+    }
+    output_failure(cause, rollback_error)
+}
+
+fn restore_backups(backups: Vec<(PathBuf, tempfile::TempPath)>, cause: io::Error) -> Result<()> {
+    let mut rollback_error = None;
+    for (target, backup) in backups {
+        if let Err(error) = fs::rename(&backup, &target) {
+            rollback_error.get_or_insert(error);
+        }
+    }
+    output_failure(cause, rollback_error)
+}
+
+fn output_failure(cause: io::Error, rollback_error: Option<io::Error>) -> Result<()> {
+    let error = if let Some(rollback_error) = rollback_error {
+        io::Error::new(
+            cause.kind(),
+            format!(
+                "committing output failed: {cause}; restoring prior outputs failed: {rollback_error}"
+            ),
+        )
+    } else {
+        cause
+    };
+    Err(RsomicsError::Io(error))
 }
 
 pub(crate) fn same_target(left: &Path, right: &Path) -> Result<bool> {
@@ -120,7 +218,7 @@ pub(crate) fn same_target(left: &Path, right: &Path) -> Result<bool> {
     Ok(target_identity(left)? == target_identity(right)?)
 }
 
-fn target_identity(path: &Path) -> Result<PathBuf> {
+pub(crate) fn target_identity(path: &Path) -> Result<PathBuf> {
     match fs::canonicalize(path) {
         Ok(path) => return Ok(path),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -236,5 +334,45 @@ where
             Inner::BamParallelLevel(mut writer) => writer.get_mut().finish().map(drop),
         }
         .map_err(RsomicsError::Io)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grouped_commit_restores_every_prior_target() {
+        let directory = tempfile::tempdir().unwrap();
+        let first_path = directory.path().join("first");
+        let second_path = directory.path().join("second");
+        fs::write(&first_path, b"old first").unwrap();
+        fs::write(&second_path, b"old second").unwrap();
+
+        let mut first = TransactionalFile::new(&first_path).unwrap();
+        first.file_mut().write_all(b"new first").unwrap();
+        let mut second = TransactionalFile::new(&second_path).unwrap();
+        second.file_mut().write_all(b"new second").unwrap();
+        fs::remove_file(second.temporary_path()).unwrap();
+
+        assert!(TransactionalFile::commit_all(vec![first, second]).is_err());
+        assert_eq!(fs::read(first_path).unwrap(), b"old first");
+        assert_eq!(fs::read(second_path).unwrap(), b"old second");
+    }
+
+    #[test]
+    fn grouped_commit_removes_new_outputs_during_rollback() {
+        let directory = tempfile::tempdir().unwrap();
+        let first_path = directory.path().join("first");
+        let second_path = directory.path().join("second");
+
+        let mut first = TransactionalFile::new(&first_path).unwrap();
+        first.file_mut().write_all(b"new first").unwrap();
+        let second = TransactionalFile::new(&second_path).unwrap();
+        fs::remove_file(second.temporary_path()).unwrap();
+
+        assert!(TransactionalFile::commit_all(vec![first, second]).is_err());
+        assert!(!first_path.exists());
+        assert!(!second_path.exists());
     }
 }

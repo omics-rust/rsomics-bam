@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::{
     addreplacerg, ampliconclip, ampliconstats, bedcov, calmd, cat, collate, commands, coverage,
     depad, depth, fixmate, flags, flagstat, head, idxstats, index, markdup, merge, mpileup,
-    quickcheck, reheader, samples, sort, view,
+    quickcheck, reheader, samples, sort, stats, view,
 };
 
 const META: ToolMeta = ToolMeta {
@@ -86,6 +86,8 @@ enum Command {
     Samples(commands::samples::Arguments),
     /// Sort alignments with bounded memory
     Sort(commands::sort::Arguments),
+    /// Produce comprehensive alignment statistics
+    Stats(Box<commands::stats::Arguments>),
     /// Filter and convert alignment records
     View(Box<commands::view::Arguments>),
 }
@@ -120,6 +122,7 @@ pub(crate) enum CommandOutput {
     Reheader { summary: reheader::Summary },
     Samples { report: samples::Report },
     Sort { summary: sort::Summary },
+    Stats { report: Box<stats::Report> },
     View { summary: view::Summary },
 }
 
@@ -165,6 +168,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Reheader(arguments) => commands::reheader::execute(arguments, cli.output.json),
         Command::Samples(arguments) => commands::samples::execute(arguments, cli.output.json),
         Command::Sort(arguments) => commands::sort::execute(arguments, cli.output.json),
+        Command::Stats(arguments) => commands::stats::execute(*arguments, cli.output.json),
         Command::View(arguments) => commands::view::execute(*arguments, cli.output.json),
     }
 }
