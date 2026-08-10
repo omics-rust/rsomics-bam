@@ -813,7 +813,62 @@ SHA-256 values were
 `b7ce5363e6b971a51f35597167dbc649c73432561ed55e8566ca379b5492aa9c`,
 and `bc776a5f60348f7e963166445a8a1d464e3a8d052ed5defbd02d87ae20084402`.
 
+## MD/NM recalculation benchmark
+
+The 2026-08-10 gate used revision
+`5e8e28129b3d06884f41d91443df1697babafe41` and samtools/HTSlib 1.24 on an
+Apple M2 Mac mini with 8 GiB of memory. Both tools read and wrote BAM with four
+additional I/O workers. One complete warm-up per tool preceded 20 timed pairs;
+command order alternated between pairs.
+
+```text
+rsomics-bam calmd --no-pg -b -@ 4 input.bam reference.fa > rsomics.bam
+samtools calmd --no-PG -b -@ 4 input.bam reference.fa > samtools.bam
+```
+
+| Tool | Mean wall time | Median wall time | Mean CPU time | Mean peak RSS |
+|---|---:|---:|---:|---:|
+| `rsomics-bam calmd` | 0.589 s | 0.570 s | 2.838 s | 19,285,606 bytes |
+| `samtools calmd` | 0.922 s | 0.880 s | 2.913 s | 18,333,696 bytes |
+
+`rsomics-bam` won all 20 pairs and was 1.57 times as fast by mean wall time.
+The paired samtools-minus-rsomics difference was 0.3330 seconds with a
+0.1430-second sample standard deviation and a 10.413 t-statistic. It used 2.6%
+less mean CPU time and 5.2% more mean peak RSS.
+
+The coordinate-sorted fixture contained 1,000,000 records, covered a
+5,000,000-base reference at approximately 30x, and was 36,459,282 bytes. The
+BAM and reference SHA-256 values were
+`33b6780ec3758a8ccde746935366dec441e89aaafb5b0253a19cfa1af350282c`
+and `13bd65f4568d0a30bc0ee218db62223cc26d9593f2b116530aa5e0b78b5f34dc`.
+Both outputs passed `samtools quickcheck`; their complete decoded headers and
+one million records had the identical SHA-256
+`d1e0cfd0c1f1c1c88482e7140efc505ef323b0027ef1fac89be4c0b49d978eb9`.
+BAM byte streams differed because their BGZF layouts differed.
+
+The measured rsomics binary was built with rustc 1.97.1 and had SHA-256
+`311632c80e80d575bd6c26a80ab8562f616a24e31e376568f2aecba2d438a605`;
+the samtools binary SHA-256 was
+`c265b440b09c4b21d1f25a65963cf907b0d9f9d18caa9382c31104158f89d027`.
+The timing ledger, summary, and environment record had SHA-256 values
+`96907c49cb6d40ce7148c5f3bbbe840abd8f7f7b4a5945d099e2f3cff7d54242`,
+`6aa3ce9e7921213d0c2d6dfd342a6c694a866c662d49ad3c41d8c29568051164`,
+and `61f4518bc44e9f7240c3530d6a8c00dca1927e25cc250ca6387aa3ecde57dffc`.
+These results establish the default compressed BAM hot path on this fixture.
+SAM, CRAM, uncompressed BAM, other worker counts, and materially different
+reference or auxiliary-tag distributions carry no throughput claim here.
+
 ## Reproduction
+
+`benchmarks/calmd-vs-samtools-macos.sh` compares default compressed BAM
+recalculation, alternates command order, and rejects malformed output or any
+complete decoded-stream difference:
+
+```sh
+RSOMICS_COMMIT=5e8e281 benchmarks/calmd-vs-samtools-macos.sh \
+  target/release/rsomics-bam /path/to/samtools input.bam reference.fa \
+  /path/to/results 20 4
+```
 
 `benchmarks/view-vs-samtools.sh` records the machine, tool versions, binary and
 input checksums, GNU time results, and decoded-output checksums. It fails on a
