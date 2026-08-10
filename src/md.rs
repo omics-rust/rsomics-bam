@@ -26,6 +26,12 @@ pub(crate) enum Recalculation {
     Updated { corrected_existing: bool },
 }
 
+#[derive(Clone, Copy)]
+enum EqualBase {
+    Literal,
+    ReferenceMatch,
+}
+
 pub(crate) struct ReferenceCache {
     reader: fasta::io::IndexedReader<fasta::io::BufReader<File>>,
     path: PathBuf,
@@ -120,6 +126,7 @@ pub(crate) fn complete(
         record.sequence_mut().as_mut(),
         reference,
         false,
+        EqualBase::Literal,
     )?;
 
     let fields = record
@@ -165,6 +172,7 @@ pub(crate) fn recalculate_record(
         record.sequence_mut().as_mut(),
         reference,
         use_equal,
+        EqualBase::ReferenceMatch,
     )?;
     let corrected_existing = apply_decoded_tags(record, nm, &md)?;
     Ok(Recalculation::Updated { corrected_existing })
@@ -212,6 +220,7 @@ fn calculate(
     read: &mut [u8],
     reference: &[u8],
     use_equal: bool,
+    equal_base: EqualBase,
 ) -> Result<(String, u32)> {
     let mut read_position = 0usize;
     let mut matched = 0;
@@ -236,7 +245,7 @@ fn calculate(
                     .ok_or_else(record_overflow)?;
 
                 for (read_base, &reference_base) in read_bases.iter_mut().zip(reference_bases) {
-                    if bases_match(*read_base, reference_base) {
+                    if bases_match(*read_base, reference_base, equal_base) {
                         if use_equal {
                             *read_base = b'=';
                         }
@@ -301,10 +310,11 @@ fn calculate(
     Ok((md, edit_distance))
 }
 
-fn bases_match(read: u8, reference: u8) -> bool {
+fn bases_match(read: u8, reference: u8, equal_base: EqualBase) -> bool {
     let read = base_code(read);
     let reference = base_code(reference);
-    read == 0 || (read == reference && read != 15)
+    (matches!(equal_base, EqualBase::ReferenceMatch) && read == 0)
+        || (read == reference && read != 15)
 }
 
 fn calculate_raw(
@@ -563,7 +573,15 @@ mod tests {
             Op::new(Kind::Match, 2),
         ];
         let mut read = b"ACTGACC".to_vec();
-        let (md, nm) = calculate(0, &cigar, &mut read, b"ACGTTAACC", false).unwrap();
+        let (md, nm) = calculate(
+            0,
+            &cigar,
+            &mut read,
+            b"ACGTTAACC",
+            false,
+            EqualBase::ReferenceMatch,
+        )
+        .unwrap();
         assert_eq!(md, "2G0T0^TA2");
         assert_eq!(nm, 5);
     }
@@ -572,7 +590,15 @@ mod tests {
     fn equal_bases_match_any_reference_base() {
         let cigar = [Op::new(Kind::Match, 4)];
         let mut read = b"====".to_vec();
-        let (md, nm) = calculate(0, &cigar, &mut read, b"ACGT", false).unwrap();
+        let (md, nm) = calculate(
+            0,
+            &cigar,
+            &mut read,
+            b"ACGT",
+            false,
+            EqualBase::ReferenceMatch,
+        )
+        .unwrap();
         assert_eq!(md, "4");
         assert_eq!(nm, 0);
     }
@@ -581,7 +607,15 @@ mod tests {
     fn equal_mode_changes_only_reference_matches() {
         let cigar = [Op::new(Kind::Match, 4)];
         let mut read = b"ATGT".to_vec();
-        let (md, nm) = calculate(0, &cigar, &mut read, b"ACGT", true).unwrap();
+        let (md, nm) = calculate(
+            0,
+            &cigar,
+            &mut read,
+            b"ACGT",
+            true,
+            EqualBase::ReferenceMatch,
+        )
+        .unwrap();
         assert_eq!(read, b"=T==");
         assert_eq!(md, "1C2");
         assert_eq!(nm, 1);
@@ -591,7 +625,26 @@ mod tests {
     fn inconsistent_cigar_is_rejected() {
         let cigar = [Op::new(Kind::Match, 5)];
         let mut read = b"ACGT".to_vec();
-        assert!(calculate(0, &cigar, &mut read, b"ACGT", false).is_err());
+        assert!(
+            calculate(
+                0,
+                &cigar,
+                &mut read,
+                b"ACGT",
+                false,
+                EqualBase::ReferenceMatch,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn cram_completion_treats_equal_as_a_literal_query_base() {
+        let cigar = [Op::new(Kind::Match, 4)];
+        let mut read = b"====".to_vec();
+        let (md, nm) = calculate(0, &cigar, &mut read, b"ACGT", false, EqualBase::Literal).unwrap();
+        assert_eq!(md, "0A0C0G0T0");
+        assert_eq!(nm, 4);
     }
 
     #[test]

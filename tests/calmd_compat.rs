@@ -32,6 +32,7 @@ clipped\t0\tchr1\t1\t60\t3S10M\t*\t0\t0\tTTTACGTACGTAC\tIIIIIIIIIIIII\n\
 skipped\t0\tchr1\t1\t60\t5M3N5M\t*\t0\t0\tACGTAACGTA\tIIIIIIIIII\n\
 ambiguous\t0\tchr1\t41\t60\t10M\t*\t0\t0\tACGTNNNNAC\tIIIIIIIIII\n\
 cigar-equal\t0\tchr1\t1\t60\t5=2X3=\t*\t0\t0\tACGTAAATAC\tIIIIIIIIII\n\
+literal-equal\t0\tchr1\t1\t60\t4M\t*\t0\t0\t====\tIIII\n\
 correct\t0\tchr1\t1\t60\t10M\t*\t0\t0\tACGTACGTAC\tIIIIIIIIII\tMD:Z:10\tNM:i:0\n\
 missing\t256\tchr1\t1\t60\t10M\t*\t0\t0\t*\t*\n\
 unmapped\t4\t*\t0\t0\t*\t*\t0\t0\tACGT\tIIII\n",
