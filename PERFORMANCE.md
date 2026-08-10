@@ -918,6 +918,20 @@ on this fixture. SAM, CRAM, embedded-reference projection, other worker
 counts, and materially different gap distributions carry no throughput claim
 here.
 
+Release 0.18.0 was published from revision
+`5304f278bfaaa8ca6c7d20fbcf3fb2900662884a` after exact-head CI
+`31414206433` passed on native Linux and macOS for x86_64 and aarch64. The
+Linux x86_64 job included package verification and the complete samtools 1.24
+oracle. Publication workflow `31415017446` produced the unyanked 210,403-byte
+registry archive with SHA-256
+`e2a5f63c3cd11cdd8c8666883029879272467ccf1a8fa0efcd20a65675bee4f9`
+and exact VCS metadata. A fresh registry install reports 0.18.0 and exposes
+`depad` through the shared help tree. Its binary SHA-256 is
+`5e8a960d9b79a3a5593f7960de813cc270d2ed0998a6af8653b5dd8c28c5f9fb`.
+The named-BAM and shared-JSON smoke processed all one million records without
+creating a FASTA sidecar, passed `samtools quickcheck`, and reproduced the
+decoded-output SHA-256 above.
+
 ## Reproduction
 
 `benchmarks/depad-vs-samtools-macos.sh` compares padded-reference projection,
