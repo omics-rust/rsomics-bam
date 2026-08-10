@@ -8,6 +8,8 @@ pub mod cat;
 pub mod collate;
 /// Per-position alignment depth.
 pub mod depth;
+/// Name-grouped FASTA and FASTQ extraction.
+pub mod fastx;
 /// Mate-field repair for name-grouped alignments.
 pub mod fixmate;
 /// SAM flag parsing and rendering.

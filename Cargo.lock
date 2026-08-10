@@ -1092,6 +1092,7 @@ dependencies = [
  "rsomics-common",
  "rsomics-help",
  "rsomics-pileup",
+ "rsomics-seqio",
  "rust-htslib",
  "same-file",
  "serde",
@@ -1116,9 +1117,9 @@ dependencies = [
 
 [[package]]
 name = "rsomics-common"
-version = "0.12.1"
+version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9c7c567a1128f5c25084d0c65a21d237eadfe2bad941b48c11e213ab96625ab"
+checksum = "7a6f75d9418b63e807e9e33ec93bebea77469a3adeff9772b22674a5e021b413"
 dependencies = [
  "clap",
  "same-file",
@@ -1145,6 +1146,18 @@ checksum = "76f04108cdaef20029ac9213cc2f734c9160815f335aa460a614be069b5c84e5"
 dependencies = [
  "rsomics-bamio",
  "thiserror 2.0.19",
+]
+
+[[package]]
+name = "rsomics-seqio"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45ddd28a8fee55d2419c0b3a062400eaf8e7ad90cad8b2ddbbfb583cfc28c736"
+dependencies = [
+ "crossbeam-channel",
+ "flate2",
+ "noodles-bgzf",
+ "rsomics-common",
 ]
 
 [[package]]

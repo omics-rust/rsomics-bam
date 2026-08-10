@@ -43,6 +43,10 @@ enum Command {
     Flags(commands::flags::Arguments),
     /// Count alignments by SAM flag category
     Flagstat(commands::flagstat::Arguments),
+    /// Convert name-grouped alignments to FASTA
+    Fasta(commands::fastx::FastaArguments),
+    /// Convert name-grouped alignments to FASTQ
+    Fastq(commands::fastx::FastqArguments),
     /// Print header lines and the first alignments as SAM
     Head(commands::head::Arguments),
     /// Build BAI, CSI, or CRAI random-access indexes
@@ -74,6 +78,8 @@ pub(crate) enum CommandOutput {
     Fixmate { summary: fixmate::Summary },
     Flags { values: Vec<flags::FlagValue> },
     Flagstat { counts: Box<flagstat::Counts> },
+    Fasta { summary: crate::fastx::Summary },
+    Fastq { summary: crate::fastx::Summary },
     Head { summary: head::Summary },
     Index { summaries: Vec<index::Summary> },
     Merge { summary: merge::Summary },
@@ -101,6 +107,8 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Fixmate(arguments) => commands::fixmate::execute(arguments, cli.output.json),
         Command::Flags(arguments) => commands::flags::execute(arguments, cli.output.json),
         Command::Flagstat(arguments) => commands::flagstat::execute(arguments, cli.output.json),
+        Command::Fasta(arguments) => commands::fastx::execute_fasta(arguments, cli.output.json),
+        Command::Fastq(arguments) => commands::fastx::execute_fastq(arguments, cli.output.json),
         Command::Head(arguments) => commands::head::execute(arguments, cli.output.json),
         Command::Index(arguments) => commands::index::execute(arguments, cli.output.json),
         Command::Merge(arguments) => commands::merge::execute(arguments, cli.output.json),
@@ -201,5 +209,37 @@ mod tests {
         assert!(reheader.contains("--no-pg"), "{reheader}");
         assert!(!reheader.contains("--command"), "{reheader}");
         assert!(!reheader.contains("--in-place"), "{reheader}");
+    }
+
+    #[test]
+    fn fasta_and_fastq_help_expose_the_unified_output_slice() {
+        let fasta = rsomics_help::try_parse_from::<Cli, _, _>(["rsomics-bam", "fasta", "--help"])
+            .unwrap_err()
+            .to_string();
+        for option in [
+            "-o, --output",
+            "-n, --no-mate-suffix",
+            "-f, --require-flags",
+            "-F, --exclude-flags",
+            "--rf",
+            "-G",
+            "-c, --compression-level",
+            "--reference",
+            "-@, --threads",
+        ] {
+            assert!(fasta.contains(option), "missing {option} in {fasta}");
+        }
+        for excluded in ["-0", "-1", "-2", "--singleton", "--tag", "--UMI"] {
+            assert!(
+                !fasta.contains(excluded),
+                "unexpected {excluded} in {fasta}"
+            );
+        }
+
+        let fastq = rsomics_help::try_parse_from::<Cli, _, _>(["rsomics-bam", "fastq", "--help"])
+            .unwrap_err()
+            .to_string();
+        assert!(fastq.contains("-O, --original-quality"), "{fastq}");
+        assert!(fastq.contains("-v, --default-quality"), "{fastq}");
     }
 }
