@@ -16,6 +16,8 @@ pub mod flagstat;
 pub mod head;
 /// Alignment random-access index construction.
 pub mod index;
+/// Coordinate-sorted duplicate marking.
+pub mod markdup;
 /// Ordered alignment merging.
 pub mod merge;
 /// Per-position pileup generation.
