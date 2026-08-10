@@ -296,6 +296,64 @@ These results establish a BAM wall-time advantage for standard collation on
 this machine and fixture. They establish no CPU or memory advantage and do not
 cover fast mode, SAM or CRAM input, or materially different name distributions.
 
+## Fixmate benchmark
+
+The 2026-08-10 fixmate gate used feature revision
+`a8a684ba57c613d78addfee466cb7eca16937d71` and samtools/HTSlib 1.24 on an
+Apple M2 Mac mini with 8 GiB of memory. The input contained 4,000,000 records
+in 2,000,000 consecutive paired templates. Both tools calculated mate scores,
+disabled program records, and ran with samtools' sanitizer disabled. Twelve
+timed pairs alternated command order after one warm-up.
+
+```text
+rsomics-bam fixmate --no-pg -m input.name.bam -o ours.bam
+samtools fixmate -z off --no-PG -m -@ 0 input.name.bam samtools.bam
+```
+
+| Tool | Mean wall time | Mean CPU time | Mean peak RSS |
+|---|---:|---:|---:|
+| `rsomics-bam fixmate` | 2.2708 s | 8.2300 s | 7,002,795 bytes |
+| `samtools fixmate` | 7.0083 s | 6.4442 s | 7,289,515 bytes |
+
+The default `rsomics-bam` path selected four additional compression workers,
+won all 12 pairs, and was 3.09 times as fast by mean wall time. The paired
+rsomics-minus-samtools difference was -4.7375 seconds, with sample standard
+deviation 0.2796 seconds and paired t-statistic -58.69. Its mean peak RSS was
+3.93% lower, while its mean CPU time was 27.71% higher.
+
+An additional 12-pair gate gave both tools four additional workers. Mean wall
+time was 2.3300 seconds for `rsomics-bam` and 2.5050 seconds for samtools;
+`rsomics-bam` won 7 of 12 pairs. The paired difference was -0.1750 seconds
+with a -1.40 t-statistic, so this gate does not establish a stable
+equal-worker throughput advantage. Mean peak RSS was 7,028,736 versus
+13,100,373 bytes, a 46.35% reduction.
+
+The 82,830,601-byte fixture had SHA-256
+`8582710cca9390ba70c3c219f41dc6b0dd8cd66fc5303f3a26d46f4a9ac9b9b5`.
+Every warm-up and timed pair passed samtools quickcheck and produced identical
+complete headers and order-sensitive record streams after normalizing only
+auxiliary-tag order. The canonical record stream contained 4,000,000 records
+and had SHA-256
+`9653a33166b90b5121dcc56281b96e3f574d5b6d3e0e9cbed6e3673b9072dcd5`.
+
+The measured rsomics and samtools binaries had SHA-256 values
+`0f4e0015c7c39438f319765c19bcda2802bda03fa0aee7c440bd396b188d5cd3`
+and `c265b440b09c4b21d1f25a65963cf907b0d9f9d18caa9382c31104158f89d027`.
+The default environment, timing, summary, and JSON files had SHA-256 values
+`321f45332f6083b29a098e13dd91e7d2a78cd7220e60540d33dfa95d86d6cab0`,
+`c9ee0c944273963be00ea0e4d8794abf566c3ffc2fcb74f14028092b2394c9f2`,
+`c71b179cdefa83c47bff1aa8d0fe792da7f99e55d8edce3cdfc53ee555c3ccc7`,
+and `3e42140f1d21d3b2efc84b8d507d9cfe94242528b91df8b61957c3a69f6e21c7`.
+The equal-worker files had SHA-256 values
+`d7643e54d50bba937ae8fd72142d94d65cd35b7e48030424072139bb04367f3e`,
+`0aad39d24c078d930e50cd98cc53486cafdf79fc71501d92968119ddfef1ce71`,
+`285792ba013ec666ea716938ac74449fe2230707a45310e8b4e8f1e2f483161e`,
+and `9ea00249d072debfbb03542feb46e28877de5516c78430f6e12424eb6fc3a800`.
+These results cover name-grouped BAM input, BAM output, mate-score calculation,
+and the measured thread settings only. They do not establish the same
+performance for SAM, CRAM, standard input, other option combinations, or
+different template-size distributions.
+
 ## Reproduction
 
 `benchmarks/view-vs-samtools.sh` records the machine, tool versions, binary and
@@ -378,6 +436,22 @@ RSOMICS_COMMIT=24095b8 benchmarks/collate-vs-samtools-macos.sh \
   target/release/rsomics-bam \
   /path/to/samtools \
   /path/to/input.bam \
+  /path/to/results \
+  12 default
+```
+
+Use `equal-workers` as the mode to pass four additional workers to both tools.
+
+`benchmarks/fixmate-vs-samtools-macos.sh` compares mate repair with mate-score
+calculation, alternates command order, and rejects any complete-header or
+order-sensitive full-record disagreement after normalizing auxiliary-tag
+order:
+
+```sh
+RSOMICS_COMMIT=a8a684b benchmarks/fixmate-vs-samtools-macos.sh \
+  target/release/rsomics-bam \
+  /path/to/samtools \
+  /path/to/queryname-sorted-pairs.bam \
   /path/to/results \
   12 default
 ```
