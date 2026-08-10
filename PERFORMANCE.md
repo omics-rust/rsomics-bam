@@ -410,6 +410,57 @@ fixture and thread settings. They do not establish the same performance for
 SAM, CRAM, standard input, removal or clearing, sequence mode, or different
 duplicate distributions.
 
+## FASTA/FASTQ extraction benchmark
+
+The 2026-08-10 extraction gate used implementation revision
+`d6cbf10707061c705eeabd85f7bfd40b30d9bf80` and samtools/HTSlib 1.24 on an
+Apple M2 Mac mini with 8 GiB of memory and macOS 26.6.1. One warm-up preceded
+10 timed pairs with alternating command order. Both tools used their default
+single-threaded paths and formatted the complete output stream to `/dev/null`.
+
+```text
+rsomics-bam fasta input.queryname.bam > /dev/null
+samtools fasta input.queryname.bam > /dev/null
+rsomics-bam fastq input.queryname.bam > /dev/null
+samtools fastq input.queryname.bam > /dev/null
+```
+
+| Format and tool | Mean wall time | Wall-time standard deviation | Mean peak RSS |
+|---|---:|---:|---:|
+| `rsomics-bam fasta` | 1.294 s | 0.032 s | 5,559,091 bytes |
+| `samtools fasta` | 1.705 s | 0.091 s | 6,709,248 bytes |
+| `rsomics-bam fastq` | 1.773 s | 0.071 s | 5,559,091 bytes |
+| `samtools fastq` | 2.608 s | 0.071 s | 6,696,141 bytes |
+
+FASTA reduced mean wall time by 24.11% and mean peak RSS by 17.14%; FASTQ
+reduced them by 32.02% and 16.98%. `rsomics-bam` won all 10 pairs for each
+format. The paired rsomics-minus-samtools wall-time differences were -0.411
+seconds for FASTA and -0.835 seconds for FASTQ, with sample standard
+deviations of 0.099 and 0.079 seconds.
+
+The natural query-name-sorted BAM contained 4,000,000 records, was 92,673,124
+bytes, and had SHA-256
+`b949852de15f08a5e13d8c6d908b6d5801ef9f254eca58699aa353883cf88326`.
+The complete FASTA and FASTQ streams matched samtools byte for byte, with
+SHA-256 values
+`7e13841514dd9137e08b0d9994afa5b4baafd0583bf7228740949bfcd6de80e3`
+and
+`a961649b1a0ee9beec27439fae61441e1d48694aa1486c7c74c1c64238ce4988`.
+The measured product and samtools binaries had SHA-256 values
+`8333eb7d4e1da96504af58182e19e7688841f2fff70ef6da18972a1eee1f9e3e`
+and
+`c265b440b09c4b21d1f25a65963cf907b0d9f9d18caa9382c31104158f89d027`.
+
+The environment, complete timing ledger, and generated summary had SHA-256
+values
+`6c8d2c7d6d58bd7785d47f383e3521e725e6b1387d075163ccf14d82a6993b39`,
+`abb92e745073024a2ac809e14e93ae5eaaffa3120122864cd5cb85abaf58ed45`,
+and
+`bd9833a1ce53dc15691df740bb11fedcc23318bd81d3cdf1cdc72412020e07d5`.
+These performance claims cover uncompressed unified output from BAM on this
+fixture. SAM, CRAM, stdin, filters, OQ replacement, and BGZF output have
+compatibility coverage but no throughput claim here.
+
 ## Compressed file-operation benchmark
 
 The 2026-08-10 file-operation gate used the final implementation tree from
@@ -568,6 +619,16 @@ RSOMICS_COMMIT=1178474 benchmarks/file-operations-vs-samtools-macos.sh \
 RSOMICS_COMMIT=62023e1 benchmarks/file-operations-vs-samtools-macos.sh \
   target/release/rsomics-bam /path/to/samtools reheader /path/to/results 12 \
   replacement.sam input.bam
+```
+
+`benchmarks/fastx-vs-samtools-macos.sh` compares unified FASTA and FASTQ
+extraction, alternates command order, and rejects any bytewise stream
+disagreement:
+
+```sh
+RSOMICS_COMMIT=d6cbf10 benchmarks/fastx-vs-samtools-macos.sh \
+  target/release/rsomics-bam /path/to/samtools \
+  /path/to/queryname-sorted.bam /path/to/results 10
 ```
 
 `benchmarks/collate-vs-samtools-macos.sh` compares standard BAM collation,

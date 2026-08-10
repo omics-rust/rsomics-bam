@@ -19,6 +19,8 @@ cargo install rsomics-bam
 | `depth` | Compute one per-input depth column at each position |
 | `flags` | Convert numeric and symbolic SAM flags |
 | `flagstat` | Count records by SAM flag category |
+| `fasta` | Convert name-grouped alignments to one FASTA stream |
+| `fastq` | Convert name-grouped alignments to one FASTQ stream |
 | `fixmate` | Repair mate fields in name-grouped alignments |
 | `head` | Print alignment headers and leading records as SAM |
 | `index` | Build BAI, CSI, or CRAI random-access indexes |
@@ -37,6 +39,7 @@ rsomics-bam view -c -F UNMAP,SECONDARY input.cram -T reference.fa
 rsomics-bam cat lane1.bam lane2.bam -o combined.bam
 rsomics-bam collate -m 128M -o grouped.bam input.bam
 rsomics-bam depth -a -b targets.bed sample.bam
+rsomics-bam fastq -o reads.fq.bgzf name-sorted.bam
 rsomics-bam fixmate -m grouped.bam -o fixed.bam
 rsomics-bam index -c -m 14 sample.bam
 rsomics-bam merge lane1.bam lane2.cram --reference reference.fa -o merged.bam
@@ -61,6 +64,11 @@ early-pair buffering are not yet exposed.
 flags, TLEN, MC, and MQ. `-m` adds the mate-score tags consumed by `markdup`.
 Sanitizer selection, template-cigar and base-modification repair, and alternate
 output formats are not yet exposed.
+`fasta` and `fastq` consume adjacent QNAME groups, prefer the first alignment
+with qualities in each READ1, READ2, or other category, restore original read
+orientation, and write one unified stream. Named `.gz`, `.bgz`, and `.bgzf`
+outputs are BGZF. Split read-end files, singleton routing, copied auxiliary
+tags, UMI/CASAVA headers, and soft-clip removal are not exposed.
 `markdup` consumes coordinate-sorted output from `fixmate -m`, marks or removes
 duplicates, and supports template and sequence decision modes. It preserves
 SAM, BAM, and CRAM input semantics while producing transactional BAM output.
@@ -87,6 +95,7 @@ passes validation. It uses up to four additional workers when `-@` is omitted;
 pass `-@ 0` for one-thread sorting.
 
 Stable behavior is tested against samtools 1.24 across SAM, BAM, and CRAM.
+FASTA/FASTQ extraction also has bytewise stdin and historical-fixture checks.
 Named alignment and pileup outputs are committed only after successful
 processing. See [PERFORMANCE.md](PERFORMANCE.md) for the representative BAM
 throughput, memory, and decoded-output gate.
