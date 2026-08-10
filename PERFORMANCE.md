@@ -5,6 +5,56 @@ read and write BAM with four additional I/O threads. Every timing round is
 accepted only after samtools verifies both files and their decoded headers and
 records match.
 
+## Stats benchmark
+
+The 2026-08-11 stats gate used feature revision
+`a349543c78bd9fa482cbf3bda3b19585a0151c97`, Rust 1.91.0, and
+samtools/HTSlib 1.24 on an Apple M2 Mac mini with 8 GiB of memory and macOS
+26.6.1. One warm-up preceded twenty paired rounds in each mode, with command
+order alternating every round. `/usr/bin/time -lp` supplied wall, CPU, and
+maximum-resident-set measurements.
+
+```text
+rsomics-bam stats -@ 0 input.bam > /dev/null
+samtools stats -@ 0 input.bam > /dev/null
+
+rsomics-bam stats -@ 4 input.bam > /dev/null
+samtools stats -@ 4 input.bam > /dev/null
+```
+
+| Threads | Tool | Mean wall time | Median wall time | Mean CPU time | Mean peak RSS | Median peak RSS |
+|---:|---|---:|---:|---:|---:|---:|
+| 0 | `rsomics-bam stats` | 1.6730 s | 1.6700 s | 1.6125 s | 5,419,008 bytes | 5,423,104 bytes |
+| 0 | `samtools stats` | 1.5295 s | 1.5200 s | 1.4685 s | 7,155,712 bytes | 7,159,808 bytes |
+| 4 | `rsomics-bam stats` | 1.5865 s | 1.5800 s | 1.7785 s | 5,835,981 bytes | 5,832,704 bytes |
+| 4 | `samtools stats` | 1.4310 s | 1.4200 s | 1.5915 s | 8,821,965 bytes | 8,814,592 bytes |
+
+Mean peak RSS was 24.27% lower in single-thread mode and 33.85% lower with
+four additional decompression threads. Mean wall time was 9.38% and 10.87%
+higher, respectively, so this gate establishes a strict memory advantage and
+does not claim a throughput advantage.
+
+The coordinate-sorted fixture contained 1,000,000 records, occupied 39,015,817
+bytes, and had SHA-256
+`bfe301fb892a39547e5384629bc52afdf7fb7ffd34e9ec47d3c0df62b0af937f`.
+Both tools produced the same complete stable report in both modes, with
+SHA-256 `0e21fec7de1b6b645689520902b33a628f09ab834ab2530f4cf6fd1dd988e29e`.
+The measured rsomics and samtools binaries had SHA-256 values
+`d6421894663d893fa7ecfb77914c8404650f32c24c3547fbbdfbf198c3e6d896`
+and `c265b440b09c4b21d1f25a65963cf907b0d9f9d18caa9382c31104158f89d027`.
+
+The single-thread timing ledger, generated summary, and environment record had
+SHA-256 values
+`111bec17d56782f90beb505fa1e0cb92431f2f5d76427fffab3d984ed1e3ab48`,
+`84ff91d47ef92f38d1f58f315f4fccfa5fc0a69cc22e0c17184104bb71e44683`,
+and `51cc7ed6ff2ec7c4c4a1bd6f3ed0b8cd1ac3ed0177970da388c4aea07f97a5b5`.
+The four-thread artifacts had SHA-256 values
+`219efc9e9536cfc0bd664e92dec2205cc32404874f5199da9f31215458d4bde1`,
+`f7124bc9adcda21471fbb79224031142d534c64655b80a44290fa4426b862fa7`,
+and `c816e9a3ad7d23109ef8a20142822071fb4fb8f84c16dfcfcd8268b9b2a26ba9`.
+`tools/benchmark-stats.sh` reproduces report validation, provenance capture,
+alternating trials, and aggregation.
+
 ## Release benchmark
 
 The 2026-08-02 benchmark used `rsomics-bam` revision
