@@ -15,6 +15,7 @@ output_dir=$5
 repeats=$6
 bed=${7:-}
 index=${8:-}
+batch=${BENCH_BATCH:-1}
 ours_output=$output_dir/ours.tsv
 samtools_output=$output_dir/samtools.tsv
 timing=$output_dir/.timing
@@ -22,6 +23,7 @@ times=$output_dir/times.tsv
 
 [[ $(uname -s) == Darwin ]]
 [[ $repeats =~ ^[1-9][0-9]*$ ]]
+[[ $batch =~ ^[1-9][0-9]*$ ]]
 ((repeats >= 2))
 [[ $mode == coverage || $mode == idxstats || $mode == bedcov ]]
 if [[ $mode == idxstats ]]; then
@@ -57,7 +59,7 @@ fi
     shasum -a 256 "$ours" "$samtools" "$input"
     stat -L -f 'input_bytes=%z' "$input"
     printf 'input_records=%s\n' "$("$samtools" view -c "$input")"
-    printf 'mode=%s\nrepeats=%s\n' "$mode" "$repeats"
+    printf 'mode=%s\nrepeats=%s\nbatch=%s\n' "$mode" "$repeats" "$batch"
     if [[ -n $bed ]]; then
         shasum -a 256 "$bed"
         printf 'bed_rows=%s\n' "$(wc -l < "$bed" | tr -d ' ')"
@@ -74,23 +76,27 @@ record_timing() {
     local tool=$3
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
         "$round" "$order" "$tool" \
-        "$(awk '$1 == "real" { print $2 }' "$timing")" \
-        "$(awk '$1 == "user" { print $2 }' "$timing")" \
-        "$(awk '$1 == "sys" { print $2 }' "$timing")" \
+        "$(awk -v batch="$batch" '$1 == "real" { print $2 / batch }' "$timing")" \
+        "$(awk -v batch="$batch" '$1 == "user" { print $2 / batch }' "$timing")" \
+        "$(awk -v batch="$batch" '$1 == "sys" { print $2 / batch }' "$timing")" \
         "$(awk '/maximum resident set size/ { print $1 }' "$timing")" >> "$times"
 }
 
 run_ours() {
     local round=$1
     local order=$2
-    /usr/bin/time -p -l -o "$timing" "${ours_command[@]}" > /dev/null
+    /usr/bin/time -p -l -o "$timing" /bin/zsh -c \
+        'count=$1; shift; repeat $count { "$@" > /dev/null }' \
+        zsh "$batch" "${ours_command[@]}"
     record_timing "$round" "$order" rsomics
 }
 
 run_samtools() {
     local round=$1
     local order=$2
-    /usr/bin/time -p -l -o "$timing" "${samtools_command[@]}" > /dev/null
+    /usr/bin/time -p -l -o "$timing" /bin/zsh -c \
+        'count=$1; shift; repeat $count { "$@" > /dev/null }' \
+        zsh "$batch" "${samtools_command[@]}"
     record_timing "$round" "$order" samtools
 }
 
