@@ -3,7 +3,7 @@
 `rsomics-bam` is a single command-line product for SAM, BAM, and CRAM
 inspection, filtering, conversion, validation, collation, mate repair, sorting,
 compressed file editing, read-group editing, duplicate marking, FASTQ import,
-padded-reference projection, and pileup workflows.
+padded-reference projection, amplicon sequencing, and pileup workflows.
 
 ## Install
 
@@ -16,6 +16,8 @@ cargo install rsomics-bam
 | Command | Purpose |
 |---|---|
 | `addreplacerg` | Add or replace header read groups and record RG tags |
+| `ampliconclip` | Clip primer sequence from coordinate-ordered BAM alignments |
+| `ampliconstats` | Report amplicon coverage and template statistics |
 | `bedcov` | Append alignment coverage totals to BED regions |
 | `calmd` | Recalculate alignment MD and NM tags from a reference |
 | `cat` | Concatenate BAM files without reencoding alignment blocks |
@@ -45,6 +47,8 @@ cargo install rsomics-bam
 rsomics-bam view -b -@ 4 -q 20 -o selected.bam input.bam
 rsomics-bam view -c -F UNMAP,SECONDARY input.cram -T reference.fa
 rsomics-bam addreplacerg -r ID:lane1 -r SM:sample input.bam -o tagged.bam
+rsomics-bam ampliconclip -b primers.bed input.bam -o clipped.bam
+rsomics-bam ampliconstats primers.bed clipped.bam -o amplicons.txt
 rsomics-bam bedcov targets.bed sample.bam
 rsomics-bam calmd -b -o recalculated.bam input.bam reference.fa
 rsomics-bam cat lane1.bam lane2.bam -o combined.bam
@@ -75,6 +79,13 @@ outputs are committed only after the complete index has been built and parsed.
 groups. Its total record-memory budget and external merge fan-in are bounded;
 the order between groups is intentionally unspecified. Fast-mode filtering and
 early-pair buffering are not yet exposed.
+`ampliconclip` consumes coordinate-ordered BAM and a three- or six-column
+primer BED, then writes clipped BAM plus optional statistics, rejects, and
+per-primer counts. `ampliconstats` consumes coordinate-ordered clipped BAM and
+the six-column BED to emit samtools-compatible per-file and combined reports.
+Both use the shared CLI and JSON envelope, reject aliased outputs, and commit
+named outputs only after successful processing. SAM, CRAM, and plot generation
+are not exposed for this workflow.
 `fixmate` preserves name-grouped record order while repairing mate coordinates,
 flags, TLEN, MC, and MQ. `-m` adds the mate-score tags consumed by `markdup`.
 Sanitizer selection, template-cigar and base-modification repair, and alternate

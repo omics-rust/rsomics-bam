@@ -115,18 +115,32 @@ pub(crate) fn ordered_record(
     })
 }
 
-fn validate_record_coordinates(record: &RawRecord, reference_count: usize) -> Result<()> {
-    validate_reference_id(record.reference_sequence_id(), reference_count, "reference")?;
-    validate_reference_id(
+pub(crate) fn validate_record_coordinates(
+    record: &RawRecord,
+    reference_count: usize,
+) -> Result<()> {
+    validate_coordinate_fields(
+        record.reference_sequence_id(),
+        record.alignment_start(),
         record.mate_reference_sequence_id(),
+        record.mate_alignment_start(),
         reference_count,
-        "mate reference",
-    )?;
-    if record.alignment_start() < -1 || record.mate_alignment_start() < -1 {
-        return Err(RsomicsError::InvalidInput(format!(
-            "read {} has an alignment position below -1",
-            String::from_utf8_lossy(record.name())
-        )));
+    )
+}
+
+pub(crate) fn validate_coordinate_fields(
+    reference: i32,
+    position: i32,
+    mate_reference: i32,
+    mate_position: i32,
+    reference_count: usize,
+) -> Result<()> {
+    validate_reference_id(reference, reference_count, "reference")?;
+    validate_reference_id(mate_reference, reference_count, "mate reference")?;
+    if position < -1 || mate_position < -1 {
+        return Err(RsomicsError::InvalidInput(
+            "alignment position is below -1".to_owned(),
+        ));
     }
     Ok(())
 }

@@ -4,6 +4,10 @@
 
 /// Alignment read-group editing.
 pub mod addreplacerg;
+/// Amplicon primer clipping.
+pub mod ampliconclip;
+/// Amplicon sequencing statistics.
+pub mod ampliconstats;
 /// Coverage totals over BED regions.
 pub mod bedcov;
 /// Alignment MD and NM tag recalculation.
@@ -58,6 +62,7 @@ pub use program::Program;
 
 mod alignment_order;
 mod alignment_stream;
+mod amplicon;
 mod bgzf_rewrite;
 mod cli;
 mod commands;

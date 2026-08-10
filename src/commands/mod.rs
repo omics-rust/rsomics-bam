@@ -1,4 +1,6 @@
 pub(crate) mod addreplacerg;
+pub(crate) mod ampliconclip;
+pub(crate) mod ampliconstats;
 pub(crate) mod bedcov;
 pub(crate) mod calmd;
 pub(crate) mod cat;

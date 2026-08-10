@@ -5,9 +5,9 @@ use rsomics_common::{OutputArgs, Result, ToolMeta, run as run_tool};
 use serde::Serialize;
 
 use crate::{
-    addreplacerg, bedcov, calmd, cat, collate, commands, coverage, depad, depth, fixmate, flags,
-    flagstat, head, idxstats, index, markdup, merge, mpileup, quickcheck, reheader, samples, sort,
-    view,
+    addreplacerg, ampliconclip, ampliconstats, bedcov, calmd, cat, collate, commands, coverage,
+    depad, depth, fixmate, flags, flagstat, head, idxstats, index, markdup, merge, mpileup,
+    quickcheck, reheader, samples, sort, view,
 };
 
 const META: ToolMeta = ToolMeta {
@@ -34,6 +34,10 @@ struct Cli {
 enum Command {
     /// Add or replace alignment read groups
     Addreplacerg(commands::addreplacerg::Arguments),
+    /// Clip amplicon primer sequence from alignments
+    Ampliconclip(commands::ampliconclip::Arguments),
+    /// Report amplicon sequencing statistics
+    Ampliconstats(commands::ampliconstats::Arguments),
     /// Report coverage totals over BED regions
     Bedcov(commands::bedcov::Arguments),
     /// Recalculate alignment MD and NM tags
@@ -88,6 +92,8 @@ enum Command {
 #[serde(tag = "command", rename_all = "kebab-case")]
 pub(crate) enum CommandOutput {
     Addreplacerg { summary: addreplacerg::Summary },
+    Ampliconclip { run: ampliconclip::Run },
+    Ampliconstats { summary: ampliconstats::Summary },
     Bedcov { summary: bedcov::Summary },
     Calmd { summary: calmd::Summary },
     Cat { summary: cat::Summary },
@@ -125,6 +131,12 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
     match cli.command {
         Command::Addreplacerg(arguments) => {
             commands::addreplacerg::execute(arguments, cli.output.json)
+        }
+        Command::Ampliconclip(arguments) => {
+            commands::ampliconclip::execute(arguments, cli.output.json)
+        }
+        Command::Ampliconstats(arguments) => {
+            commands::ampliconstats::execute(arguments, cli.output.json)
         }
         Command::Bedcov(arguments) => commands::bedcov::execute(arguments, cli.output.json),
         Command::Calmd(arguments) => commands::calmd::execute(arguments, cli.output.json),
@@ -323,6 +335,54 @@ mod tests {
                 .to_string();
         for option in ["-X", "-o, --output", "-@, --threads", "--reference"] {
             assert!(idxstats.contains(option), "missing {option} in {idxstats}");
+        }
+    }
+
+    #[test]
+    fn amplicon_help_exposes_the_paired_workflow() {
+        let clip =
+            rsomics_help::try_parse_from::<Cli, _, _>(["rsomics-bam", "ampliconclip", "--help"])
+                .unwrap_err()
+                .to_string();
+        for option in [
+            "-b <BED>",
+            "-o, --output",
+            "-f, --stats",
+            "--soft-clip",
+            "--hard-clip",
+            "--both-ends",
+            "--strand",
+            "--rejects-file",
+            "--primer-counts",
+            "--original",
+            "--keep-tag",
+            "--no-pg",
+            "-@, --threads",
+        ] {
+            assert!(clip.contains(option), "missing {option} in {clip}");
+        }
+
+        let stats =
+            rsomics_help::try_parse_from::<Cli, _, _>(["rsomics-bam", "ampliconstats", "--help"])
+                .unwrap_err()
+                .to_string();
+        for option in [
+            "-f, --required-flag",
+            "-F, --filter-flag",
+            "-a, --max-amplicons",
+            "-l, --max-amplicon-length",
+            "-d, --min-depth",
+            "-m, --pos-margin",
+            "-o, --output",
+            "-s, --use-sample-name",
+            "-t, --tlen-adjust",
+            "-b, --tcoord-bin",
+            "-c, --tcoord-min-count",
+            "-D, --depth-bin",
+            "-S, --single-ref",
+            "-@, --threads",
+        ] {
+            assert!(stats.contains(option), "missing {option} in {stats}");
         }
     }
 

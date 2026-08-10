@@ -1,0 +1,94 @@
+# Summary statistics, used for scaling the plots.
+SS	Number of files:	1
+SS	Number of amplicons:	chr1	2
+SS	Reference length:	chr1	500
+SS	End of summary
+# Amplicon locations from BED file.
+# LEFT/RIGHT are <start>-<end> format and comma-separated for alt-primers.
+#
+# AMPLICON	REF	NUMBER	LEFT	RIGHT
+AMPLICON	chr1	1	51-70	151-170
+AMPLICON	chr1	2	201-220	301-320
+# Summary stats.
+# Use 'grep ^FSS | cut -f 2-' to extract this part.
+FSS	amplicons	chr1	raw total sequences:	50
+FSS	amplicons	chr1	filtered sequences:	0
+FSS	amplicons	chr1	failed primer match:	0
+FSS	amplicons	chr1	matching sequences:	50
+FSS	amplicons	chr1	consensus depth count < 1 and >= 1:	0	158
+# Absolute matching read counts per amplicon.
+# Use 'grep ^FREADS | cut -f 2-' to extract this part.
+FREADS	amplicons	30	20
+FVDEPTH	amplicons	15	10
+# Read percentage of distribution between amplicons.
+# Use 'grep ^FRPERC | cut -f 2-' to extract this part.
+FRPERC	amplicons	60.000	40.000
+# Read depth per amplicon.
+# Use 'grep ^FDEPTH | cut -f 2-' to extract this part.
+FDEPTH	amplicons	29.7	19.8
+# Percentage coverage per amplicon
+# Use 'grep ^FPCOV | cut -f 2-' to extract this part.
+FPCOV-1	amplicons	100.00	100.00
+# Depth per reference base for ALL data.
+# Use 'grep ^FDP_ALL | cut -f 2-' to extract this part.
+FDP_ALL	amplicons	chr1	0,45	1,1	4,1	6,2	7,1	9,1	12,2	13,1	14,1	15,92	14,3	13,1	11,2	8,1	4,1	0,40	1,1	2,1	3,1	4,1	6,1	7,1	9,4	10,94	9,3	8,1	6,1	3,1	0,195
+# Depth per reference base for full-length valid amplicon data.
+# Use 'grep ^FDP_VALID | cut -f 2-' to extract this part.
+FDP_VALID	amplicons	chr1	0,45	1,1	4,1	6,2	7,1	9,1	12,2	13,1	14,1	15,92	14,3	13,1	11,2	8,1	4,1	0,40	1,1	2,1	3,1	4,1	6,1	7,1	9,4	10,94	9,3	8,1	6,1	3,1	0,195
+# Distribution of aligned template coordinates.
+# Use 'grep ^FTCOORD | cut -f 2-' to extract this part.
+FTCOORD	amplicons	0
+FTCOORD	amplicons	1
+FTCOORD	amplicons	2
+# Classification of amplicon status.  Columns are
+# number with both primers from this amplicon, number with
+# primers from different amplicon, and number with a position
+# not matching any valid amplicon primer site
+# Use 'grep ^FAMP | cut -f 2-' to extract this part.
+FAMP	amplicons	0	43	0	0
+FAMP	amplicons	1	27	0	0
+FAMP	amplicons	2	16	0	0
+# Summary stats.
+# Use 'grep ^CSS | cut -f 2-' to extract this part.
+CSS	COMBINED	chr1	raw total sequences:	50
+CSS	COMBINED	chr1	filtered sequences:	0
+CSS	COMBINED	chr1	failed primer match:	0
+CSS	COMBINED	chr1	matching sequences:	50
+CSS	COMBINED	chr1	consensus depth count < 1 and >= 1:	158	0
+# Absolute matching read counts per amplicon.
+# Use 'grep ^CREADS | cut -f 2-' to extract this part.
+CREADS	COMBINED	30	20
+CVDEPTH	COMBINED	15	10
+CREADS	MEAN	30.0	20.0
+CREADS	STDDEV	0.0	0.0
+# Read percentage of distribution between amplicons.
+# Use 'grep ^CRPERC | cut -f 2-' to extract this part.
+CRPERC	COMBINED	60.000	40.000
+CRPERC	MEAN	60.000	40.000
+CRPERC	STDDEV	0.000	0.000
+# Read depth per amplicon.
+# Use 'grep ^CDEPTH | cut -f 2-' to extract this part.
+CDEPTH	COMBINED	29.7	19.8
+CDEPTH	MEAN	29.7	19.8
+CDEPTH	STDDEV	0.0	0.0
+CPCOV-1	MEAN	100.0	100.0
+CPCOV-1	STDDEV	0.0	0.0
+# Depth per reference base for ALL data.
+# Use 'grep ^CDP_ALL | cut -f 2-' to extract this part.
+CDP_ALL	COMBINED	chr1	0,45	1,1	4,1	6,2	7,1	9,1	12,2	13,1	14,1	15,92	14,3	13,1	11,2	8,1	4,1	0,40	1,1	2,1	3,1	4,1	6,1	7,1	9,4	10,94	9,3	8,1	6,1	3,1	0,195
+# Depth per reference base for full-length valid amplicon data.
+# Use 'grep ^CDP_VALID | cut -f 2-' to extract this part.
+CDP_VALID	COMBINED	chr1	0,45	1,1	4,1	6,2	7,1	9,1	12,2	13,1	14,1	15,92	14,3	13,1	11,2	8,1	4,1	0,40	1,1	2,1	3,1	4,1	6,1	7,1	9,4	10,94	9,3	8,1	6,1	3,1	0,195
+# Distribution of aligned template coordinates.
+# Use 'grep ^CTCOORD | cut -f 2-' to extract this part.
+CTCOORD	COMBINED	0
+CTCOORD	COMBINED	1
+CTCOORD	COMBINED	2
+# Classification of amplicon status.  Columns are
+# number with both primers from this amplicon, number with
+# primers from different amplicon, and number with a position
+# not matching any valid amplicon primer site
+# Use 'grep ^CAMP | cut -f 2-' to extract this part.
+CAMP	COMBINED	0	43	0	0
+CAMP	COMBINED	1	27	0	0
+CAMP	COMBINED	2	16	0	0
