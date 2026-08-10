@@ -793,6 +793,26 @@ dense sweep trades a small bounded memory increase for its throughput gain;
 other BED layouts and unusually deep data can select the indexed or pileup
 path instead.
 
+Release 0.16.0 was published from revision
+`be3cafe21867c7773f40395d3669502909c2e12b` after exact-head CI
+`31398246573` passed on native Linux and macOS for x86_64 and aarch64. The
+Linux x86_64 job also passed the complete samtools 1.24 compatibility oracle.
+Publication workflow `31398905778` produced an unyanked 190,502-byte registry
+archive with SHA-256
+`47f7bf82915054ac2a1fc1b66dbed35c77b47940fdb3f6c680ce789478be3345`;
+its VCS metadata identifies the exact release revision.
+
+A fresh registry install reports 0.16.0 and exposes `bedcov`, `coverage`, and
+`idxstats` through the shared help tree. Its binary SHA-256 is
+`9bd2f0ac01d7f67a16e4e7af4b37e3328038f75bf69c61da7195322638f2a4d7`.
+Installed smoke tests produced BED coverage, complete reference coverage,
+indexed-statistics fallback, and the shared JSON envelope. Their output
+SHA-256 values were
+`7ad62cb366232be9a14e4ec74b4661536672065a7e81f6a1321ded4d9cf633a9`,
+`480fe5dea573ecee21aee4b149343309bf222736edfc2fd613e8b4430b908708`,
+`b7ce5363e6b971a51f35597167dbc649c73432561ed55e8566ca379b5492aa9c`,
+and `bc776a5f60348f7e963166445a8a1d464e3a8d052ed5defbd02d87ae20084402`.
+
 ## Reproduction
 
 `benchmarks/view-vs-samtools.sh` records the machine, tool versions, binary and
