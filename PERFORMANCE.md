@@ -470,6 +470,19 @@ The corresponding reheader values were
 and `bad792f1c535ca76ccf9d2655113c8a00941d835b48b9dd267282e08fcc316fd`.
 These claims cover named BAM output and the measured fixtures only.
 
+Release 0.12.0 was published from revision
+`dfbc321d9dbec515b704634a104fed1680238e33` after exact-head CI
+`31368507277` passed on native Linux and macOS for x86_64 and aarch64.
+Publication workflow `31368957921` produced an unyanked 144,963-byte registry
+archive with SHA-256
+`df10fadae75e377e4a3c40244ad5bfd19d47010a874cc8063b81641fc8d1182b`.
+A fresh registry install reported 0.12.0 and exposed both commands through the
+shared help tree. Its two-shard cat smoke stream matched samtools 1.24 at
+`0c9f5514885e469f4720858c25bef106a529091844c33c37ccc449ba45feb675`;
+the four-million-record reheader smoke matched at
+`8bc5ca00000bfa575068de363b70bf3224cbebb3919519b58e2e01f410a19a15`.
+docs.rs serves the corresponding library documentation.
+
 ## Reproduction
 
 `benchmarks/view-vs-samtools.sh` records the machine, tool versions, binary and
