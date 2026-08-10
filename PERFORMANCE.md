@@ -436,7 +436,7 @@ structurally validating every BGZF frame. It won 5 of 12 wall-time pairs; the
 paired difference was 0.1442 seconds with a 0.4008-second sample standard
 deviation and a 1.25 t-statistic. A 4 MiB output-buffer candidate was rejected
 after a separate 24-pair gate: it averaged 1.0358 versus 0.9796 seconds, won
-8 pairs, and used 9,644,032 versus 7,010,304 bytes mean peak RSS. The released
+8 pairs, and used 9,644,032 versus 7,010,304 bytes mean peak RSS. The selected
 path retains the bounded 2 MiB policy and makes a resource-use claim, not a
 cat throughput claim.
 
