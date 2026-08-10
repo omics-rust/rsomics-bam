@@ -59,7 +59,7 @@ fingerprint() {
     local context=$1
     local tool=$2
     local bam=$3
-    "$samtools" quickcheck "$bam"
+    "$samtools" view -c "$bam" >/dev/null
     "$samtools" view -H "$bam" | grep -Ev '^@(CO|PG)[[:space:]]' | shasum -a 256 \
         > "$output_dir/$context-$tool-header.sha256"
     "$samtools" view "$bam" | shasum -a 256 \
@@ -113,7 +113,7 @@ measure() {
         /usr/bin/time -p -l -o "$timing" "$samtools" import \
             -1 "$read1" -2 "$read2" --no-PG -@ "$threads" -o "$destination"
     fi
-    "$samtools" quickcheck "$destination"
+    "$samtools" view -c "$destination" >/dev/null
     record_timing "$context" "$round" "$order" "$tool"
 }
 
