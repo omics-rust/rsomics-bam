@@ -2,6 +2,8 @@
 
 //! Programmatic interfaces for the rsomics SAM, BAM, and CRAM product.
 
+/// Alignment read-group editing.
+pub mod addreplacerg;
 /// Compressed-block BAM concatenation.
 pub mod cat;
 /// Bounded-memory read-name collation.

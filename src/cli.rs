@@ -5,8 +5,8 @@ use rsomics_common::{OutputArgs, Result, ToolMeta, run as run_tool};
 use serde::Serialize;
 
 use crate::{
-    cat, collate, commands, depth, fixmate, flags, flagstat, head, index, markdup, merge, mpileup,
-    quickcheck, reheader, samples, sort, view,
+    addreplacerg, cat, collate, commands, depth, fixmate, flags, flagstat, head, index, markdup,
+    merge, mpileup, quickcheck, reheader, samples, sort, view,
 };
 
 const META: ToolMeta = ToolMeta {
@@ -31,6 +31,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Add or replace alignment read groups
+    Addreplacerg(commands::addreplacerg::Arguments),
     /// Concatenate BAM files without reencoding alignment blocks
     Cat(commands::cat::Arguments),
     /// Group alignments by read name with bounded memory
@@ -74,6 +76,7 @@ enum Command {
 #[derive(Debug, Serialize)]
 #[serde(tag = "command", rename_all = "kebab-case")]
 pub(crate) enum CommandOutput {
+    Addreplacerg { summary: addreplacerg::Summary },
     Cat { summary: cat::Summary },
     Collate { summary: collate::Summary },
     Depth { summary: depth::Summary },
@@ -104,6 +107,9 @@ pub(crate) fn run() -> process::ExitCode {
 
 fn execute(cli: Cli) -> Result<CommandOutput> {
     match cli.command {
+        Command::Addreplacerg(arguments) => {
+            commands::addreplacerg::execute(arguments, cli.output.json)
+        }
         Command::Cat(arguments) => commands::cat::execute(arguments, cli.output.json),
         Command::Collate(arguments) => commands::collate::execute(arguments, cli.output.json),
         Command::Depth(arguments) => commands::depth::execute(arguments, cli.output.json),
@@ -213,6 +219,31 @@ mod tests {
         assert!(reheader.contains("--no-pg"), "{reheader}");
         assert!(!reheader.contains("--command"), "{reheader}");
         assert!(!reheader.contains("--in-place"), "{reheader}");
+    }
+
+    #[test]
+    fn addreplacerg_help_exposes_the_stable_slice() {
+        let help =
+            rsomics_help::try_parse_from::<Cli, _, _>(["rsomics-bam", "addreplacerg", "--help"])
+                .unwrap_err()
+                .to_string();
+        for option in [
+            "-r, --rg-line",
+            "-R, --rg-id",
+            "-m, --mode",
+            "-w, --overwrite-header",
+            "-o, --output",
+            "-O, --output-fmt",
+            "-u, --uncompressed",
+            "--reference",
+            "-@, --threads",
+            "--no-pg",
+        ] {
+            assert!(help.contains(option), "missing {option} in {help}");
+        }
+        for excluded in ["--write-index", "--output-fmt-option", "--verbosity"] {
+            assert!(!help.contains(excluded), "unexpected {excluded} in {help}");
+        }
     }
 
     #[test]

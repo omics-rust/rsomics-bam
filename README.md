@@ -2,7 +2,8 @@
 
 `rsomics-bam` is a single command-line product for SAM, BAM, and CRAM
 inspection, filtering, conversion, validation, collation, mate repair, sorting,
-compressed file editing, duplicate marking, FASTQ import, and pileup workflows.
+compressed file editing, read-group editing, duplicate marking, FASTQ import,
+and pileup workflows.
 
 ## Install
 
@@ -14,6 +15,7 @@ cargo install rsomics-bam
 
 | Command | Purpose |
 |---|---|
+| `addreplacerg` | Add or replace header read groups and record RG tags |
 | `cat` | Concatenate BAM files without reencoding alignment blocks |
 | `collate` | Group all alignments for each read name with bounded memory |
 | `depth` | Compute one per-input depth column at each position |
@@ -37,6 +39,7 @@ cargo install rsomics-bam
 ```sh
 rsomics-bam view -b -@ 4 -q 20 -o selected.bam input.bam
 rsomics-bam view -c -F UNMAP,SECONDARY input.cram -T reference.fa
+rsomics-bam addreplacerg -r ID:lane1 -r SM:sample input.bam -o tagged.bam
 rsomics-bam cat lane1.bam lane2.bam -o combined.bam
 rsomics-bam collate -m 128M -o grouped.bam input.bam
 rsomics-bam depth -a -b targets.bed sample.bam
@@ -78,6 +81,14 @@ named output, and `-O` overrides format selection. Named outputs are
 transactional. Read groups, input-order tags, plain/gzip/BGZF input, and BAM
 compression workers are supported. Index FASTQs, CASAVA and UMI parsing,
 FASTQ-comment auxiliary tags, and CRAM output are not yet exposed.
+`addreplacerg` accepts SAM, BAM, and reference-backed CRAM input and writes
+SAM or BAM. A new read group can be assembled with repeatable `-r` fields, an
+existing ID can be selected with `-R`, and omitting both selects the first
+header read group. Overwrite mode replaces every record tag and makes a new
+group the only header read group; orphan mode preserves existing groups and
+tags. Same-ID header replacement requires `-w`. Named output is transactional.
+CRAM output, automatic indexing, and HTSlib format-option strings are not yet
+exposed.
 `markdup` consumes coordinate-sorted output from `fixmate -m`, marks or removes
 duplicates, and supports template and sequence decision modes. It preserves
 SAM, BAM, and CRAM input semantics while producing transactional BAM output.
@@ -104,6 +115,8 @@ passes validation. It uses up to four additional workers when `-@` is omitted;
 pass `-@ 0` for one-thread sorting.
 
 Stable behavior is tested against samtools 1.24 across SAM, BAM, and CRAM.
+Read-group editing is field-matched across new, existing, implicit, overwrite,
+orphan, SAM, BAM, CRAM, and non-string-tag cases.
 FASTQ import is field-matched for positional and explicit input modes, read
 groups, order tags, compressed input, standard input, SAM, and BAM output.
 FASTA/FASTQ extraction also has bytewise stdin and historical-fixture checks.
