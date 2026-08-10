@@ -44,6 +44,14 @@ fn require_both_fail(name: &str) {
 }
 
 fn require_equal(name: &str, remove: bool) {
+    let mut arguments = Vec::new();
+    if remove {
+        arguments.push("-r");
+    }
+    require_equal_args(name, &arguments);
+}
+
+fn require_equal_args(name: &str, arguments: &[&str]) {
     if !samtools_available() {
         return;
     }
@@ -53,9 +61,7 @@ fn require_equal(name: &str, remove: bool) {
     let oracle_path = directory.path().join("oracle.bam");
     let mut ours = binary();
     ours.args(["markdup", "--no-PG"]);
-    if remove {
-        ours.arg("-r");
-    }
+    ours.args(arguments);
     let ours = ours.arg(&input).arg("-o").arg(&ours_path).output().unwrap();
     assert!(
         ours.status.success(),
@@ -65,9 +71,7 @@ fn require_equal(name: &str, remove: bool) {
 
     let mut oracle = Command::new("samtools");
     oracle.args(["markdup", "--no-PG"]);
-    if remove {
-        oracle.arg("-r");
-    }
+    oracle.args(arguments);
     let oracle = oracle.arg(input).arg(&oracle_path).output().unwrap();
     assert!(
         oracle.status.success(),
@@ -118,4 +122,14 @@ fn default_output_matches_samtools() {
 #[test]
 fn removal_output_matches_samtools() {
     require_equal("6_remove_dups.sam", true);
+}
+
+#[test]
+fn sequence_mode_matches_samtools() {
+    require_equal_args("8_sequence_mode.sam", &["--mode", "s"]);
+}
+
+#[test]
+fn include_fails_matches_samtools() {
+    require_equal_args("9_include_fails.sam", &["--mode", "s", "--include-fails"]);
 }

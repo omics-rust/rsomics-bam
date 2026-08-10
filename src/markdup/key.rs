@@ -1,6 +1,8 @@
 use rsomics_bamio::raw::RawRecord;
 use rsomics_common::{Result, RsomicsError};
 
+use super::Mode;
+
 const REVERSE: u16 = 0x10;
 const MATE_REVERSE: u16 = 0x20;
 const READ1: u16 = 0x40;
@@ -43,7 +45,7 @@ pub(crate) fn single(record: &RawRecord) -> Result<SingleKey> {
     })
 }
 
-pub(crate) fn pair(record: &RawRecord) -> Result<PairKey> {
+pub(crate) fn pair(record: &RawRecord, mode: Mode) -> Result<PairKey> {
     let (start, end) = record_coordinates(record)?;
     let (mate_start, mate_end) = mate_coordinates(record)?;
     let reference = i64::from(record.reference_sequence_id()) + 1;
@@ -51,50 +53,32 @@ pub(crate) fn pair(record: &RawRecord) -> Result<PairKey> {
     let reverse = flag(record, REVERSE);
     let mate_reverse = flag(record, MATE_REVERSE);
 
-    let left = if reference != mate_reference {
-        reference < mate_reference
-    } else if reverse == mate_reverse {
-        if reverse {
-            end <= mate_end
-        } else {
-            start <= mate_start
+    let left = match mode {
+        Mode::Template => {
+            if reference != mate_reference {
+                reference < mate_reference
+            } else if reverse == mate_reverse {
+                if reverse {
+                    end <= mate_end
+                } else {
+                    start <= mate_start
+                }
+            } else if reverse {
+                end <= mate_start
+            } else {
+                start <= mate_end
+            }
         }
-    } else if reverse {
-        end <= mate_start
-    } else {
-        start <= mate_end
+        Mode::Sequence => sequence_left(record, start, end, mate_start, mate_end),
     };
 
-    let mut coordinate = start;
-    let mut mate_coordinate = mate_start;
-    let orientation = if left {
-        if reverse == mate_reverse {
-            mate_coordinate = mate_end;
-            if reverse == flag(record, READ1) {
-                FORWARD_FORWARD
-            } else {
-                REVERSE_REVERSE
-            }
-        } else if reverse {
-            coordinate = end;
-            REVERSE_FORWARD
-        } else {
-            mate_coordinate = mate_end;
-            FORWARD_REVERSE
-        }
-    } else if reverse == mate_reverse {
-        coordinate = end;
-        if reverse == flag(record, READ1) {
-            REVERSE_REVERSE
-        } else {
-            FORWARD_FORWARD
-        }
-    } else if reverse {
-        coordinate = end;
-        FORWARD_REVERSE
-    } else {
-        mate_coordinate = mate_end;
-        REVERSE_FORWARD
+    let (coordinate, mate_coordinate, orientation) = match mode {
+        Mode::Template => template_fields(record, left, start, end, mate_start, mate_end),
+        Mode::Sequence => (
+            if reverse { end } else { start },
+            if mate_reverse { mate_end } else { mate_start },
+            sequence_orientation(left, reverse, mate_reverse),
+        ),
     };
 
     Ok(PairKey {
@@ -105,6 +89,88 @@ pub(crate) fn pair(record: &RawRecord) -> Result<PairKey> {
         side: if left { LEFT } else { RIGHT },
         orientation,
     })
+}
+
+fn sequence_left(record: &RawRecord, start: i64, end: i64, mate_start: i64, mate_end: i64) -> bool {
+    let reference = record.reference_sequence_id();
+    let mate_reference = record.mate_reference_sequence_id();
+    let reverse = flag(record, REVERSE);
+    let mate_reverse = flag(record, MATE_REVERSE);
+    let ordering = if reference != mate_reference {
+        reference.cmp(&mate_reference)
+    } else if reverse == mate_reverse {
+        if reverse {
+            end.cmp(&mate_end)
+        } else {
+            start.cmp(&mate_start)
+        }
+    } else if reverse {
+        end.cmp(&mate_start)
+    } else {
+        start.cmp(&mate_end)
+    };
+    match ordering {
+        std::cmp::Ordering::Less => true,
+        std::cmp::Ordering::Greater => false,
+        std::cmp::Ordering::Equal => {
+            if record.alignment_start() == record.mate_alignment_start() {
+                flag(record, READ1)
+            } else {
+                record.alignment_start() < record.mate_alignment_start()
+            }
+        }
+    }
+}
+
+fn template_fields(
+    record: &RawRecord,
+    left: bool,
+    start: i64,
+    end: i64,
+    mate_start: i64,
+    mate_end: i64,
+) -> (i64, i64, u8) {
+    let reverse = flag(record, REVERSE);
+    let mate_reverse = flag(record, MATE_REVERSE);
+    let read1 = flag(record, READ1);
+    if left {
+        if reverse == mate_reverse {
+            let orientation = if reverse != read1 {
+                FORWARD_FORWARD
+            } else {
+                REVERSE_REVERSE
+            };
+            (start, mate_end, orientation)
+        } else if reverse {
+            (end, mate_start, REVERSE_FORWARD)
+        } else {
+            (start, mate_end, FORWARD_REVERSE)
+        }
+    } else if reverse == mate_reverse {
+        let orientation = if reverse == read1 {
+            FORWARD_FORWARD
+        } else {
+            REVERSE_REVERSE
+        };
+        (end, mate_start, orientation)
+    } else if reverse {
+        (end, mate_start, FORWARD_REVERSE)
+    } else {
+        (start, mate_end, REVERSE_FORWARD)
+    }
+}
+
+fn sequence_orientation(left: bool, reverse: bool, mate_reverse: bool) -> u8 {
+    match (left, reverse, mate_reverse) {
+        (true, false, false) => FORWARD_FORWARD,
+        (true, true, true) => REVERSE_REVERSE,
+        (true, false, true) => FORWARD_REVERSE,
+        (true, true, false) => REVERSE_FORWARD,
+        (false, false, false) => REVERSE_REVERSE,
+        (false, true, true) => FORWARD_FORWARD,
+        (false, false, true) => REVERSE_FORWARD,
+        (false, true, false) => FORWARD_REVERSE,
+    }
 }
 
 pub(crate) fn coordinate(key: SingleKey) -> i64 {

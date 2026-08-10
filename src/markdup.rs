@@ -21,11 +21,20 @@ const QC_FAIL: u16 = 0x200;
 const DUPLICATE: u16 = 0x400;
 const SUPPLEMENTARY: u16 = 0x800;
 const MIN_SCORE_QUALITY: u8 = 15;
-const MAX_READ_LENGTH: i64 = 300;
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Mode {
+    #[default]
+    Template,
+    Sequence,
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Options<'a> {
     pub remove: bool,
+    pub clear: bool,
+    pub include_fails: bool,
+    pub mode: Mode,
+    pub max_read_length: u32,
     pub additional_threads: Option<usize>,
     pub reference: Option<&'a Path>,
     pub destination: Option<&'a Path>,
@@ -74,6 +83,10 @@ where
 {
     writer: &'a mut output::Writer<W>,
     remove: bool,
+    clear: bool,
+    include_fails: bool,
+    mode: Mode,
+    max_read_length: i64,
     buffer: VecDeque<Entry>,
     base: usize,
     single: HashMap<SingleKey, usize>,
@@ -87,10 +100,14 @@ impl<'a, W> Marker<'a, W>
 where
     W: Write + Send + 'static,
 {
-    fn new(writer: &'a mut output::Writer<W>, remove: bool) -> Self {
+    fn new(writer: &'a mut output::Writer<W>, options: &Options<'_>) -> Self {
         Self {
             writer,
-            remove,
+            remove: options.remove,
+            clear: options.clear,
+            include_fails: options.include_fails,
+            mode: options.mode,
+            max_read_length: i64::from(options.max_read_length),
             buffer: VecDeque::new(),
             base: 0,
             single: HashMap::new(),
@@ -101,12 +118,21 @@ where
         }
     }
 
-    fn process(&mut self, record: RawRecord) -> Result<bool> {
+    fn process(&mut self, mut record: RawRecord) -> Result<bool> {
         self.counts.records = increment(self.counts.records)?;
         self.require_coordinate_order(&record)?;
+        if self.clear && record.flags() & DUPLICATE != 0 {
+            record.clear_flag_bits(DUPLICATE);
+            record.remove_aux(*b"do");
+            record.remove_aux(*b"dt");
+        }
         let reference = record.reference_sequence_id();
         let raw_position = record.alignment_start();
-        let excluded = record.flags() & (SECONDARY | SUPPLEMENTARY | UNMAPPED | QC_FAIL) != 0;
+        let mut excluded_flags = SECONDARY | SUPPLEMENTARY | UNMAPPED;
+        if !self.include_fails {
+            excluded_flags |= QC_FAIL;
+        }
+        let excluded = record.flags() & excluded_flags != 0;
         if excluded {
             self.counts.excluded_records = increment(self.counts.excluded_records)?;
             self.buffer.push_back(Entry {
@@ -138,7 +164,7 @@ where
         self.resolve_single(&mut entry, single_key, id, paired)?;
         if paired {
             self.counts.paired_records = increment(self.counts.paired_records)?;
-            let pair_key = key::pair(&entry.record)?;
+            let pair_key = key::pair(&entry.record, self.mode)?;
             self.resolve_pair(&mut entry, pair_key, id)?;
         } else {
             self.counts.single_records = increment(self.counts.single_records)?;
@@ -189,12 +215,20 @@ where
             entry.pair_key = Some(key);
             return Ok(());
         };
-        let old_score = score(&self.entry(occupant).record)
-            .checked_add(mate_score(&self.entry(occupant).record)?)
-            .ok_or_else(score_overflow)?;
-        let new_score = score(&entry.record)
-            .checked_add(mate_score(&entry.record)?)
-            .ok_or_else(score_overflow)?;
+        let old_qc_fail = self.entry(occupant).record.flags() & QC_FAIL != 0;
+        let new_qc_fail = entry.record.flags() & QC_FAIL != 0;
+        let (old_score, new_score) = if old_qc_fail != new_qc_fail {
+            if old_qc_fail { (0, 1) } else { (1, 0) }
+        } else {
+            (
+                score(&self.entry(occupant).record)
+                    .checked_add(mate_score(&self.entry(occupant).record)?)
+                    .ok_or_else(score_overflow)?,
+                score(&entry.record)
+                    .checked_add(mate_score(&entry.record)?)
+                    .ok_or_else(score_overflow)?,
+            )
+        };
         let incoming_wins = new_score > old_score
             || (new_score == old_score && entry.record.name() < self.entry(occupant).record.name());
         if incoming_wins {
@@ -219,7 +253,7 @@ where
         while let Some(front) = self.buffer.front() {
             let boundary = front
                 .position
-                .checked_add(MAX_READ_LENGTH)
+                .checked_add(self.max_read_length)
                 .ok_or_else(coordinate_overflow)?;
             if boundary > current_position
                 && front.reference == current_reference
@@ -295,6 +329,11 @@ where
             "markdup additional thread count cannot exceed 256".to_owned(),
         ));
     }
+    if options.max_read_length == 0 {
+        return Err(RsomicsError::ConfigError(
+            "markdup maximum read length must be greater than zero".to_owned(),
+        ));
+    }
     let mut reader = input::open(input_path, options.reference, 0)?;
     let header = reader.read_header(input_path)?;
     reject_query_name_order(&header, input_path)?;
@@ -309,7 +348,7 @@ where
         output,
     );
     writer.write_header(&header)?;
-    let mut marker = Marker::new(&mut writer, options.remove);
+    let mut marker = Marker::new(&mut writer, &options);
     reader.visit_owned_raw_records(&header, input_path, |record| marker.process(record))?;
     let counts = marker.finish()?;
     writer.finish(&header)?;

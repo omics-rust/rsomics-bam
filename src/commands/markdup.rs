@@ -1,7 +1,7 @@
 use std::io::{self, BufWriter};
 use std::path::{Path, PathBuf};
 
-use clap::Args;
+use clap::{Args, ValueEnum};
 use rsomics_common::{Result, RsomicsError};
 
 use crate::cli::CommandOutput;
@@ -25,6 +25,22 @@ pub(crate) struct Arguments {
     /// Remove records flagged as duplicates
     #[arg(short = 'r', long)]
     remove: bool,
+
+    /// Clear prior duplicate flags and duplicate tags before marking
+    #[arg(short = 'c', long)]
+    clear: bool,
+
+    /// Include QC-failed primary records in duplicate decisions
+    #[arg(long)]
+    include_fails: bool,
+
+    /// Paired-read duplicate decision mode
+    #[arg(short = 'm', long, value_enum, default_value = "t")]
+    mode: ModeArgument,
+
+    /// Maximum read length used by the coordinate window
+    #[arg(short = 'l', long, value_name = "INT", default_value_t = 300)]
+    max_read_length: u32,
 
     /// Reference FASTA for CRAM decoding
     #[arg(long, value_name = "FASTA")]
@@ -66,6 +82,10 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
         .transpose()?;
     let options = markdup::Options {
         remove: arguments.remove,
+        clear: arguments.clear,
+        include_fails: arguments.include_fails,
+        mode: arguments.mode.into(),
+        max_read_length: arguments.max_read_length,
         additional_threads: arguments.threads,
         reference: arguments.reference.as_deref(),
         destination: output,
@@ -83,4 +103,21 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
         None => markdup::write(input, options, io::stdout())?,
     };
     Ok(CommandOutput::Markdup { summary })
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum ModeArgument {
+    #[value(name = "t", alias = "template")]
+    Template,
+    #[value(name = "s", alias = "sequence")]
+    Sequence,
+}
+
+impl From<ModeArgument> for markdup::Mode {
+    fn from(value: ModeArgument) -> Self {
+        match value {
+            ModeArgument::Template => Self::Template,
+            ModeArgument::Sequence => Self::Sequence,
+        }
+    }
 }
