@@ -6,6 +6,7 @@ use serde::Serialize;
 
 use crate::{Program, input};
 
+mod bed;
 mod label;
 mod output;
 mod parts;
@@ -29,7 +30,7 @@ impl Format {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Mode {
+pub enum Mode<'a> {
     ReadGroup,
     Tag([u8; 2]),
     Parts {
@@ -37,11 +38,12 @@ pub enum Mode {
         seed: u64,
         skip_unmapped: bool,
     },
+    Genes(&'a Path),
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Options<'a> {
-    pub mode: Mode,
+    pub mode: Mode<'a>,
     pub output_prefix: &'a Path,
     pub unaccounted: Option<&'a Path>,
     pub unaccounted_header: Option<&'a Path>,
@@ -75,6 +77,10 @@ pub fn run(input_path: &Path, options: Options<'_>) -> Result<Summary> {
         .unaccounted_header
         .map(|path| read_header(path, options.reference))
         .transpose()?;
+    let genes = match options.mode {
+        Mode::Genes(path) => Some(bed::ExonIndex::read(path, &header)?),
+        _ => None,
+    };
     if unaccounted_header
         .as_ref()
         .is_some_and(|candidate| !same_dictionary(&header, candidate))
@@ -96,6 +102,14 @@ pub fn run(input_path: &Path, options: Options<'_>) -> Result<Summary> {
             run_tags(&mut reader, &header, input_path, options, &mut router)?
         }
         Mode::Parts { .. } => run_parts(&mut reader, &header, input_path, options, &mut router)?,
+        Mode::Genes(_) => run_genes(
+            &mut reader,
+            &header,
+            input_path,
+            options.format,
+            genes.as_ref().expect("gene mode constructs its exon index"),
+            &mut router,
+        )?,
     };
     let mut summary = router.finish()?;
     summary.records = records;
@@ -131,6 +145,13 @@ fn validate(input_path: &Path, options: Options<'_>) -> Result<()> {
                 "parts mode does not use an unaccounted output".to_owned(),
             ));
         }
+    }
+    if matches!(options.mode, Mode::Genes(_))
+        && (options.unaccounted.is_some() || options.unaccounted_header.is_some())
+    {
+        return Err(RsomicsError::ConfigError(
+            "gene mode does not use an unaccounted output".to_owned(),
+        ));
     }
     if options.zero_pad > 128 {
         return Err(RsomicsError::ConfigError(
@@ -171,7 +192,7 @@ fn run_tags(
     let tag = match options.mode {
         Mode::ReadGroup => *b"RG",
         Mode::Tag(tag) => tag,
-        Mode::Parts { .. } => unreachable!(),
+        Mode::Parts { .. } | Mode::Genes(_) => unreachable!(),
     };
     let require_string = options.mode == Mode::ReadGroup || tag == *b"RG";
     let mut records = 0u64;
@@ -245,6 +266,65 @@ fn run_parts(
         })?;
     }
     Ok((records, skipped))
+}
+
+fn run_genes(
+    reader: &mut input::Reader,
+    header: &sam::Header,
+    input_path: &Path,
+    format: Format,
+    exons: &bed::ExonIndex,
+    router: &mut output::Router,
+) -> Result<(u64, u64)> {
+    let mut records = 0u64;
+    if format == Format::Bam {
+        reader.visit_owned_raw_records(header, input_path, |record| {
+            records = increment(records)?;
+            let destination = if record.flags() & (0x04 | 0x200) != 0 {
+                2
+            } else if exons.contains(record.reference_sequence_id(), record.alignment_start())? {
+                0
+            } else {
+                1
+            };
+            router.write_raw_to(destination, &record)?;
+            Ok(true)
+        })?;
+    } else {
+        reader.visit_records(header, input_path, |record| {
+            let record = sam::alignment::RecordBuf::try_from_alignment_record(header, record)
+                .map_err(RsomicsError::Io)?;
+            records = increment(records)?;
+            let destination = if u16::from(record.flags()) & (0x04 | 0x200) != 0 {
+                2
+            } else {
+                let reference = record.reference_sequence_id().ok_or_else(|| {
+                    RsomicsError::InvalidInput(
+                        "mapped gene split record has no reference".to_owned(),
+                    )
+                })?;
+                let position = record.alignment_start().ok_or_else(|| {
+                    RsomicsError::InvalidInput(
+                        "mapped gene split record has no alignment start".to_owned(),
+                    )
+                })?;
+                let reference = i32::try_from(reference).map_err(|_| {
+                    RsomicsError::InvalidInput("gene split record reference exceeds i32".to_owned())
+                })?;
+                let position = i32::try_from(usize::from(position) - 1).map_err(|_| {
+                    RsomicsError::InvalidInput("gene split record position exceeds i32".to_owned())
+                })?;
+                if exons.contains(reference, position)? {
+                    0
+                } else {
+                    1
+                }
+            };
+            router.write_record_to(destination, &record)?;
+            Ok(true)
+        })?;
+    }
+    Ok((records, 0))
 }
 
 fn read_header(path: &Path, reference: Option<&Path>) -> Result<sam::Header> {

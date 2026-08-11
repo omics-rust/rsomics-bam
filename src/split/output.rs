@@ -97,6 +97,9 @@ impl Router {
         if let Some(path) = options.unaccounted_header {
             protected.push(path.to_owned());
         }
+        if let Mode::Genes(path) = options.mode {
+            protected.push(path.to_owned());
+        }
         let mut router = Self {
             protected,
             header: header.clone(),
@@ -128,6 +131,11 @@ impl Router {
                     router.add_destination(
                         format!("{index:0width$}", width = options.zero_pad).as_bytes(),
                     )?;
+                }
+            }
+            Mode::Genes(_) => {
+                for label in [b"in".as_slice(), b"ex".as_slice(), b"junk".as_slice()] {
+                    router.add_destination(label)?;
                 }
             }
             Mode::Tag(_) => {}

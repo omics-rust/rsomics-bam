@@ -34,6 +34,27 @@ fn names(path: &Path) -> Vec<Vec<u8>> {
     snapshot(path).1.into_iter().map(|(name, _)| name).collect()
 }
 
+fn view_body(path: &Path) -> Vec<u8> {
+    let output = Command::new(env!("CARGO_BIN_EXE_rsomics-bam"))
+        .args(["view", "--no-pg"])
+        .arg(path)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output.stdout
+}
+
+fn body_names(body: &[u8]) -> Vec<Vec<u8>> {
+    body.split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| line.split(|byte| *byte == b'\t').next().unwrap().to_vec())
+        .collect()
+}
+
 fn write_sam(path: &Path, header: &str, records: &[&str]) {
     let mut source = header.as_bytes().to_vec();
     source.push(b'\n');
@@ -655,4 +676,124 @@ fn parts_validate_limits_and_skip_only_unmapped_records() {
     .collect::<HashSet<_>>();
     assert!(!retained.contains(b"r5".as_slice()));
     assert_eq!(retained.len(), 8);
+}
+
+#[test]
+fn gene_mode_matches_the_retained_rseqc_record_bodies() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = fixture("genes/reads.bam");
+    let bed = fixture("genes/genes.strict.bed12");
+    let prefix = directory.path().join("genes");
+    let summary = run(
+        &input,
+        Options {
+            mode: Mode::Genes(&bed),
+            output_prefix: &prefix,
+            unaccounted: None,
+            unaccounted_header: None,
+            format: Format::Bam,
+            maximum_outputs: 100,
+            zero_pad: 0,
+            reference: None,
+            additional_threads: 0,
+            program: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(summary.records, 9);
+    assert_eq!(summary.skipped, 0);
+    assert_eq!(
+        summary
+            .outputs
+            .iter()
+            .map(|output| (output.label.as_str(), output.records))
+            .collect::<Vec<_>>(),
+        [("in", 5), ("ex", 2), ("junk", 2)]
+    );
+    for label in ["in", "ex", "junk"] {
+        assert_eq!(
+            view_body(&directory.path().join(format!("genes.{label}.bam"))),
+            fs::read(fixture(&format!("genes/{label}.sam"))).unwrap()
+        );
+    }
+}
+
+#[test]
+fn gene_mode_uses_leftmost_start_and_preserves_targets_on_bed_failure() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("reads.sam");
+    let bed = directory.path().join("genes.bed12");
+    let prefix = directory.path().join("genes");
+    write_sam(
+        &input,
+        "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:500",
+        &[
+            "overlap\t0\tchr1\t51\t60\t10M50N\t*\t0\t0\tAAAAAAAAAA\tFFFFFFFFFF",
+            "inside\t0\tchr1\t101\t60\t10M\t*\t0\t0\tAAAAAAAAAA\tFFFFFFFFFF",
+            "qcfail\t512\tchr1\t101\t60\t10M\t*\t0\t0\tAAAAAAAAAA\tFFFFFFFFFF",
+            "unmapped\t4\t*\t0\t0\t*\t*\t0\t0\t*\t*",
+        ],
+    );
+    fs::write(
+        &bed,
+        b"chr1\t100\t200\tgene\t0\t+\t100\t200\t0\t1\t100,\t0,\n",
+    )
+    .unwrap();
+    run(
+        &input,
+        Options {
+            mode: Mode::Genes(&bed),
+            output_prefix: &prefix,
+            unaccounted: None,
+            unaccounted_header: None,
+            format: Format::Sam,
+            maximum_outputs: 100,
+            zero_pad: 0,
+            reference: None,
+            additional_threads: 0,
+            program: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        body_names(&view_body(&directory.path().join("genes.in.sam"))),
+        [b"inside".to_vec()]
+    );
+    assert_eq!(
+        body_names(&view_body(&directory.path().join("genes.ex.sam"))),
+        [b"overlap".to_vec()]
+    );
+    assert_eq!(
+        body_names(&view_body(&directory.path().join("genes.junk.sam"))),
+        [b"qcfail".to_vec(), b"unmapped".to_vec()]
+    );
+
+    for label in ["in", "ex", "junk"] {
+        fs::write(directory.path().join(format!("prior.{label}.bam")), label).unwrap();
+    }
+    let prior = directory.path().join("prior");
+    assert!(
+        run(
+            &input,
+            Options {
+                mode: Mode::Genes(&fixture("genes/genes.bed12")),
+                output_prefix: &prior,
+                unaccounted: None,
+                unaccounted_header: None,
+                format: Format::Bam,
+                maximum_outputs: 100,
+                zero_pad: 0,
+                reference: None,
+                additional_threads: 0,
+                program: None,
+            },
+        )
+        .is_err()
+    );
+    for label in ["in", "ex", "junk"] {
+        assert_eq!(
+            fs::read(directory.path().join(format!("prior.{label}.bam"))).unwrap(),
+            label.as_bytes()
+        );
+    }
 }
