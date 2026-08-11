@@ -64,6 +64,8 @@ pub mod reset;
 pub mod samples;
 /// Bounded-memory alignment sorting.
 pub mod sort;
+/// Alignment partitioning.
+pub mod split;
 /// Comprehensive alignment statistics.
 pub mod stats;
 /// Alignment conversion to BED intervals.
