@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -27,6 +28,10 @@ fn snapshot(path: &Path) -> (noodles::sam::Header, Records) {
         records.push((record.name().to_vec(), read_group.to_vec()));
     }
     (header, records)
+}
+
+fn names(path: &Path) -> Vec<Vec<u8>> {
+    snapshot(path).1.into_iter().map(|(name, _)| name).collect()
 }
 
 fn write_sam(path: &Path, header: &str, records: &[&str]) {
@@ -514,4 +519,140 @@ fn explicit_read_group_tag_synthesizes_undeclared_headers() {
             .is_empty()
     );
     assert_eq!(records, [(b"unknown".to_vec(), b"ghost".to_vec())]);
+}
+
+#[test]
+fn seeded_parts_are_a_reproducible_exact_cover() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = fixture("parts/diverse.bam");
+    let first = directory.path().join("first");
+    let second = directory.path().join("second");
+    let base = Options {
+        mode: Mode::Parts {
+            count: 3,
+            seed: 7,
+            skip_unmapped: false,
+        },
+        output_prefix: &first,
+        unaccounted: None,
+        unaccounted_header: None,
+        format: Format::Bam,
+        maximum_outputs: 100,
+        zero_pad: 2,
+        reference: None,
+        additional_threads: 0,
+        program: None,
+    };
+    let first_summary = run(&input, base).unwrap();
+    let second_summary = run(
+        &input,
+        Options {
+            output_prefix: &second,
+            ..base
+        },
+    )
+    .unwrap();
+    assert_eq!(first_summary.records, 9);
+    assert_eq!(first_summary.outputs.len(), 3);
+    assert_eq!(
+        first_summary
+            .outputs
+            .iter()
+            .map(|output| output.records)
+            .sum::<u64>(),
+        9
+    );
+    assert_eq!(
+        second_summary
+            .outputs
+            .iter()
+            .map(|output| output.records)
+            .sum::<u64>(),
+        9
+    );
+
+    let input_names = names(&input).into_iter().collect::<HashSet<_>>();
+    let mut seen = HashSet::new();
+    for part in 0..3 {
+        let label = format!("{part:02}");
+        let first_names = names(&directory.path().join(format!("first.{label}.bam")));
+        let second_names = names(&directory.path().join(format!("second.{label}.bam")));
+        assert_eq!(first_names, second_names);
+        for name in first_names {
+            assert!(seen.insert(name));
+        }
+    }
+    assert_eq!(seen, input_names);
+}
+
+#[test]
+fn parts_validate_limits_and_skip_only_unmapped_records() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = fixture("parts/diverse.bam");
+    let prefix = directory.path().join("parts");
+    let base = Options {
+        mode: Mode::Parts {
+            count: 0,
+            seed: 0,
+            skip_unmapped: false,
+        },
+        output_prefix: &prefix,
+        unaccounted: None,
+        unaccounted_header: None,
+        format: Format::Bam,
+        maximum_outputs: 2,
+        zero_pad: 0,
+        reference: None,
+        additional_threads: 0,
+        program: None,
+    };
+    assert!(run(&input, base).is_err());
+    assert!(!directory.path().join("parts.0.bam").exists());
+    assert!(
+        run(
+            &input,
+            Options {
+                mode: Mode::Parts {
+                    count: 3,
+                    seed: 0,
+                    skip_unmapped: false,
+                },
+                ..base
+            },
+        )
+        .is_err()
+    );
+    assert!(!directory.path().join("parts.1.bam").exists());
+
+    let summary = run(
+        &input,
+        Options {
+            mode: Mode::Parts {
+                count: 2,
+                seed: 0,
+                skip_unmapped: true,
+            },
+            ..base
+        },
+    )
+    .unwrap();
+    assert_eq!(summary.records, 9);
+    assert_eq!(summary.skipped, 1);
+    assert_eq!(
+        summary
+            .outputs
+            .iter()
+            .map(|output| output.records)
+            .sum::<u64>(),
+        8
+    );
+    let retained = [
+        names(&directory.path().join("parts.0.bam")),
+        names(&directory.path().join("parts.1.bam")),
+    ]
+    .concat()
+    .into_iter()
+    .collect::<HashSet<_>>();
+    assert!(!retained.contains(b"r5".as_slice()));
+    assert_eq!(retained.len(), 8);
 }

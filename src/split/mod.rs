@@ -8,6 +8,7 @@ use crate::{Program, input};
 
 mod label;
 mod output;
+mod parts;
 mod tag;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -31,6 +32,11 @@ impl Format {
 pub enum Mode {
     ReadGroup,
     Tag([u8; 2]),
+    Parts {
+        count: usize,
+        seed: u64,
+        skip_unmapped: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -85,39 +91,15 @@ pub fn run(input_path: &Path, options: Options<'_>) -> Result<Summary> {
     }
 
     let mut router = output::Router::new(input_path, &header, unaccounted_header, options)?;
-    let tag = match options.mode {
-        Mode::ReadGroup => *b"RG",
-        Mode::Tag(tag) => tag,
+    let (records, skipped) = match options.mode {
+        Mode::ReadGroup | Mode::Tag(_) => {
+            run_tags(&mut reader, &header, input_path, options, &mut router)?
+        }
+        Mode::Parts { .. } => run_parts(&mut reader, &header, input_path, options, &mut router)?,
     };
-    let require_string = options.mode == Mode::ReadGroup || tag == *b"RG";
-    let mut records = 0u64;
-    if options.format == Format::Bam {
-        reader.visit_owned_raw_records(&header, input_path, |record| {
-            let outcome = if require_string {
-                tag::read_string(&record, tag)
-            } else {
-                tag::read(&record, tag, options.zero_pad)
-            };
-            router.write_raw(&record, outcome)?;
-            records = increment(records)?;
-            Ok(true)
-        })?;
-    } else {
-        reader.visit_records(&header, input_path, |record| {
-            let record = sam::alignment::RecordBuf::try_from_alignment_record(&header, record)
-                .map_err(RsomicsError::Io)?;
-            let outcome = if require_string {
-                tag::read_string_record(&record, tag)?
-            } else {
-                tag::read_record(&record, tag, options.zero_pad)?
-            };
-            router.write_record(&record, outcome)?;
-            records = increment(records)?;
-            Ok(true)
-        })?;
-    }
     let mut summary = router.finish()?;
     summary.records = records;
+    summary.skipped = skipped;
     Ok(summary)
 }
 
@@ -131,6 +113,24 @@ fn validate(input_path: &Path, options: Options<'_>) -> Result<()> {
         return Err(RsomicsError::ConfigError(
             "split maximum output count must be positive".to_owned(),
         ));
+    }
+    if let Mode::Parts { count, .. } = options.mode {
+        if count == 0 {
+            return Err(RsomicsError::ConfigError(
+                "split part count must be positive".to_owned(),
+            ));
+        }
+        if count > options.maximum_outputs {
+            return Err(RsomicsError::ConfigError(format!(
+                "split part count {count} exceeds the output limit {}",
+                options.maximum_outputs
+            )));
+        }
+        if options.unaccounted.is_some() || options.unaccounted_header.is_some() {
+            return Err(RsomicsError::ConfigError(
+                "parts mode does not use an unaccounted output".to_owned(),
+            ));
+        }
     }
     if options.zero_pad > 128 {
         return Err(RsomicsError::ConfigError(
@@ -159,6 +159,92 @@ fn increment(value: u64) -> Result<u64> {
     value
         .checked_add(1)
         .ok_or_else(|| RsomicsError::InvalidInput("split record count exceeds u64".to_owned()))
+}
+
+fn run_tags(
+    reader: &mut input::Reader,
+    header: &sam::Header,
+    input_path: &Path,
+    options: Options<'_>,
+    router: &mut output::Router,
+) -> Result<(u64, u64)> {
+    let tag = match options.mode {
+        Mode::ReadGroup => *b"RG",
+        Mode::Tag(tag) => tag,
+        Mode::Parts { .. } => unreachable!(),
+    };
+    let require_string = options.mode == Mode::ReadGroup || tag == *b"RG";
+    let mut records = 0u64;
+    if options.format == Format::Bam {
+        reader.visit_owned_raw_records(header, input_path, |record| {
+            let outcome = if require_string {
+                tag::read_string(&record, tag)
+            } else {
+                tag::read(&record, tag, options.zero_pad)
+            };
+            router.write_raw(&record, outcome)?;
+            records = increment(records)?;
+            Ok(true)
+        })?;
+    } else {
+        reader.visit_records(header, input_path, |record| {
+            let record = sam::alignment::RecordBuf::try_from_alignment_record(header, record)
+                .map_err(RsomicsError::Io)?;
+            let outcome = if require_string {
+                tag::read_string_record(&record, tag)?
+            } else {
+                tag::read_record(&record, tag, options.zero_pad)?
+            };
+            router.write_record(&record, outcome)?;
+            records = increment(records)?;
+            Ok(true)
+        })?;
+    }
+    Ok((records, 0))
+}
+
+fn run_parts(
+    reader: &mut input::Reader,
+    header: &sam::Header,
+    input_path: &Path,
+    options: Options<'_>,
+    router: &mut output::Router,
+) -> Result<(u64, u64)> {
+    let Mode::Parts {
+        count,
+        seed,
+        skip_unmapped,
+    } = options.mode
+    else {
+        unreachable!()
+    };
+    let mut generator = parts::SplitMix64::new(seed);
+    let mut records = 0u64;
+    let mut skipped = 0u64;
+    if options.format == Format::Bam {
+        reader.visit_owned_raw_records(header, input_path, |record| {
+            records = increment(records)?;
+            if skip_unmapped && record.flags() & 0x04 != 0 {
+                skipped = increment(skipped)?;
+            } else {
+                router.write_raw_to(generator.index(count), &record)?;
+            }
+            Ok(true)
+        })?;
+    } else {
+        reader.visit_records(header, input_path, |record| {
+            let record = sam::alignment::RecordBuf::try_from_alignment_record(header, record)
+                .map_err(RsomicsError::Io)?;
+            records = increment(records)?;
+            if skip_unmapped && u16::from(record.flags()) & 0x04 != 0 {
+                skipped = increment(skipped)?;
+            } else {
+                router.write_record_to(generator.index(count), &record)?;
+            }
+            Ok(true)
+        })?;
+    }
+    Ok((records, skipped))
 }
 
 fn read_header(path: &Path, reference: Option<&Path>) -> Result<sam::Header> {

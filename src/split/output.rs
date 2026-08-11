@@ -112,10 +112,25 @@ impl Router {
             repository,
         };
 
-        if options.mode == Mode::ReadGroup || options.mode == Mode::Tag(*b"RG") {
-            for id in header.read_groups().keys() {
-                router.add_destination(id.as_ref())?;
+        match options.mode {
+            Mode::ReadGroup => {
+                for id in header.read_groups().keys() {
+                    router.add_destination(id.as_ref())?;
+                }
             }
+            Mode::Tag(tag) if tag == *b"RG" => {
+                for id in header.read_groups().keys() {
+                    router.add_destination(id.as_ref())?;
+                }
+            }
+            Mode::Parts { count, .. } => {
+                for index in 0..count {
+                    router.add_destination(
+                        format!("{index:0width$}", width = options.zero_pad).as_bytes(),
+                    )?;
+                }
+            }
+            Mode::Tag(_) => {}
         }
         if let Some(path) = options.unaccounted {
             let index = router.add_sink(
@@ -130,7 +145,13 @@ impl Router {
 
     pub(super) fn write_raw(&mut self, record: &RawRecord, outcome: tag::Outcome) -> Result<()> {
         let destination = self.destination(record.name(), outcome)?;
-        let sink = &mut self.sinks[destination];
+        self.write_raw_to(destination, record)
+    }
+
+    pub(super) fn write_raw_to(&mut self, destination: usize, record: &RawRecord) -> Result<()> {
+        let sink = self.sinks.get_mut(destination).ok_or_else(|| {
+            RsomicsError::ConfigError(format!("split destination {destination} does not exist"))
+        })?;
         sink.writer.write_raw(record)?;
         sink.records = increment(sink.records)?;
         Ok(())
@@ -143,7 +164,17 @@ impl Router {
     ) -> Result<()> {
         let name = record.name().map_or(b"".as_slice(), |name| name.as_ref());
         let destination = self.destination(name, outcome)?;
-        let sink = &mut self.sinks[destination];
+        self.write_record_to(destination, record)
+    }
+
+    pub(super) fn write_record_to(
+        &mut self,
+        destination: usize,
+        record: &sam::alignment::RecordBuf,
+    ) -> Result<()> {
+        let sink = self.sinks.get_mut(destination).ok_or_else(|| {
+            RsomicsError::ConfigError(format!("split destination {destination} does not exist"))
+        })?;
         sink.writer.write_record(&sink.header, record)?;
         sink.records = increment(sink.records)?;
         Ok(())
