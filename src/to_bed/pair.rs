@@ -3,8 +3,8 @@ use std::io::Write;
 use rsomics_bamio::raw::RawRecord;
 use rsomics_common::{Result, RsomicsError};
 
-use super::Options;
 use super::record::{PAIRED, READ1, READ2, REVERSE, UNMAPPED, project, reference_end, score};
+use super::{PairScore, Score};
 
 pub(super) struct State {
     pending: Option<RawRecord>,
@@ -20,13 +20,14 @@ impl State {
         output: &mut impl Write,
         references: &[String],
         record: &RawRecord,
-        options: Options<'_>,
+        score: PairScore,
+        mate1_first: bool,
     ) -> Result<bool> {
         let Some(first) = self.pending.take() else {
             self.pending = Some(record.clone());
             return Ok(false);
         };
-        write(output, references, &first, record, options)?;
+        write(output, references, &first, record, score, mate1_first)?;
         Ok(true)
     }
 
@@ -53,7 +54,8 @@ fn write(
     references: &[String],
     first: &RawRecord,
     second: &RawRecord,
-    options: Options<'_>,
+    score_mode: PairScore,
+    mate1_first: bool,
 ) -> Result<()> {
     if first.name() != second.name() {
         return Err(RsomicsError::InvalidInput(format!(
@@ -86,7 +88,7 @@ fn write(
     let mut right_record = second;
     let mut left = end(first, references)?;
     let mut right = end(second, references)?;
-    let swap = if options.mate1_first {
+    let swap = if mate1_first {
         first.flags() & READ1 == 0
     } else {
         (left.reference, left.start) > (right.reference, right.start)
@@ -96,22 +98,24 @@ fn write(
         std::mem::swap(&mut left, &mut right);
     }
 
-    let pair_score = if let Some(tag) = options.score_tag {
-        [left_record, right_record]
+    let pair_score = match score_mode {
+        PairScore::EditDistance => [left_record, right_record]
             .into_iter()
             .filter(|record| record.flags() & UNMAPPED == 0)
             .try_fold(0i64, |sum, record| {
-                sum.checked_add(score(record, Some(tag))?)
+                sum.checked_add(score(record, Score::EditDistance)?)
                     .ok_or_else(|| RsomicsError::InvalidInput("BEDPE score overflows".to_owned()))
-            })?
-    } else if left_record.flags() & UNMAPPED == 0 && right_record.flags() & UNMAPPED == 0 {
-        i64::from(
-            left_record
-                .mapping_quality()
-                .min(right_record.mapping_quality()),
-        )
-    } else {
-        0
+            })?,
+        PairScore::MappingQuality
+            if left_record.flags() & UNMAPPED == 0 && right_record.flags() & UNMAPPED == 0 =>
+        {
+            i64::from(
+                left_record
+                    .mapping_quality()
+                    .min(right_record.mapping_quality()),
+            )
+        }
+        PairScore::MappingQuality => 0,
     };
     write!(
         output,

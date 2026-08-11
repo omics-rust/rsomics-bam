@@ -42,7 +42,7 @@ pub(super) fn bed6(output: &mut impl Write, bed: Bed<'_>, cigar: Option<&str>) -
 pub(super) fn bed12(
     output: &mut impl Write,
     bed: Bed<'_>,
-    color: &str,
+    color: [u8; 3],
     blocks: &[(u64, u64)],
 ) -> Result<()> {
     output
@@ -58,11 +58,14 @@ pub(super) fn bed12(
     }
     write!(
         output,
-        "\t{}\t{}\t{}\t{}\t{color}\t{}\t",
+        "\t{}\t{}\t{}\t{}\t{},{},{}\t{}\t",
         bed.score,
         if bed.flags & REVERSE != 0 { '-' } else { '+' },
         bed.start,
         bed.end,
+        color[0],
+        color[1],
+        color[2],
         blocks.len()
     )
     .map_err(RsomicsError::Io)?;

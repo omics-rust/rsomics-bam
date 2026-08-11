@@ -6,7 +6,7 @@ use rsomics_common::{Result, RsomicsError};
 
 use crate::cli::CommandOutput;
 use crate::output::{TransactionalFile, same_target};
-use crate::to_bed::{self, Options};
+use crate::to_bed::{self, Layout, Options, PairScore, RecordLayout, Score};
 
 #[derive(Debug, Args)]
 pub(crate) struct Arguments {
@@ -55,7 +55,7 @@ pub(crate) struct Arguments {
         requires = "bed12",
         value_parser = parse_color
     )]
-    color: Option<String>,
+    color: Option<[u8; 3]>,
 
     /// Reference FASTA for CRAM input
     #[arg(short = 'T', long = "reference", value_name = "FILE")]
@@ -84,11 +84,6 @@ pub(crate) struct Arguments {
 }
 
 pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput> {
-    if arguments.threads > 256 {
-        return Err(RsomicsError::ConfigError(
-            "to-bed additional thread count cannot exceed 256".to_owned(),
-        ));
-    }
     let input = arguments
         .flagged_input
         .as_deref()
@@ -118,17 +113,43 @@ pub(crate) fn execute(arguments: Arguments, json: bool) -> Result<CommandOutput>
             "to-bed reference and output must be different files".to_owned(),
         ));
     }
+    let score = if arguments.edit_distance {
+        Score::EditDistance
+    } else if let Some(tag) = arguments.tag {
+        Score::Tag(tag)
+    } else {
+        Score::MappingQuality
+    };
+    let layout = if arguments.bedpe {
+        Layout::Bedpe {
+            score: if arguments.edit_distance {
+                PairScore::EditDistance
+            } else {
+                PairScore::MappingQuality
+            },
+            mate1_first: arguments.mate1,
+        }
+    } else if arguments.bed12 {
+        Layout::Records(RecordLayout::Bed12 {
+            score,
+            split_deletions: arguments.split_deletions,
+            color: arguments.color.unwrap_or([255, 0, 0]),
+        })
+    } else if arguments.split || arguments.split_deletions {
+        Layout::Records(RecordLayout::SplitBed6 {
+            score,
+            split_deletions: arguments.split_deletions,
+        })
+    } else {
+        Layout::Records(RecordLayout::Bed6 {
+            score,
+            cigar: arguments.cigar,
+        })
+    };
     let options = Options {
         reference: arguments.reference.as_deref(),
         additional_threads: arguments.threads,
-        bed12: arguments.bed12,
-        split: arguments.split || arguments.split_deletions,
-        split_deletions: arguments.split_deletions,
-        color: arguments.color.as_deref().unwrap_or("255,0,0"),
-        score_tag: arguments.edit_distance.then_some(*b"NM").or(arguments.tag),
-        cigar: arguments.cigar,
-        bedpe: arguments.bedpe,
-        mate1_first: arguments.mate1,
+        layout,
     };
     let summary = if let Some(output) = output {
         let mut transaction = TransactionalFile::new(output)?;
@@ -152,16 +173,13 @@ fn parse_tag(value: &str) -> std::result::Result<[u8; 2], String> {
     Ok(tag)
 }
 
-fn parse_color(value: &str) -> std::result::Result<String, String> {
-    let channels: Vec<_> = value.split(',').collect();
-    if channels.len() != 3
-        || channels
-            .iter()
-            .any(|channel| channel.parse::<u8>().is_err())
-    {
-        return Err(format!(
-            "color must be an R,G,B triplet from 0 to 255: {value:?}"
-        ));
-    }
-    Ok(value.to_owned())
+fn parse_color(value: &str) -> std::result::Result<[u8; 3], String> {
+    let channels: Vec<_> = value
+        .split(',')
+        .map(str::parse::<u8>)
+        .collect::<std::result::Result<_, _>>()
+        .map_err(|_| format!("color must be an R,G,B triplet from 0 to 255: {value:?}"))?;
+    channels
+        .try_into()
+        .map_err(|_| format!("color must be an R,G,B triplet from 0 to 255: {value:?}"))
 }

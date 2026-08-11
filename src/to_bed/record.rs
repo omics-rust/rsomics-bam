@@ -4,6 +4,7 @@ use rsomics_bamio::raw::RawRecord;
 use rsomics_common::{Result, RsomicsError};
 
 use crate::raw_aux::{self, Integer};
+use crate::to_bed::Score;
 
 pub(super) const UNMAPPED: u16 = 0x4;
 pub(super) const PAIRED: u16 = 0x1;
@@ -117,9 +118,11 @@ pub(super) fn blocks(
     Ok(blocks)
 }
 
-pub(super) fn score(record: &RawRecord, tag: Option<[u8; 2]>) -> Result<i64> {
-    let Some(tag) = tag else {
-        return Ok(i64::from(record.mapping_quality()));
+pub(super) fn score(record: &RawRecord, score: Score) -> Result<i64> {
+    let tag = match score {
+        Score::MappingQuality => return Ok(i64::from(record.mapping_quality())),
+        Score::EditDistance => *b"NM",
+        Score::Tag(tag) => tag,
     };
     match raw_aux::integer(record, tag) {
         Integer::Value(value) => Ok(value),
