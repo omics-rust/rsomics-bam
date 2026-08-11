@@ -4,7 +4,8 @@
 inspection, filtering, conversion, validation, collation, mate repair, sorting,
 compressed file editing, read-group editing, duplicate marking, FASTQ import,
 padded-reference projection, alignment reset, amplicon sequencing, consensus
-calling, pileup, and content-checksum and alignment-to-interval workflows.
+calling, pileup, read-backed phasing, and content-checksum and
+alignment-to-interval workflows.
 
 ## Install
 
@@ -41,6 +42,7 @@ cargo install rsomics-bam
 | `merge` | Merge ordered alignment files into BAM |
 | `markdup` | Mark or remove duplicate alignments in coordinate order |
 | `mpileup` | Generate per-position text pileup |
+| `phase` | Call and phase heterozygous SNPs from aligned reads |
 | `quickcheck` | Validate headers and format-specific end markers |
 | `reheader` | Replace a BAM header without reencoding alignment blocks |
 | `reset` | Restore primary alignments to unaligned reads |
@@ -74,6 +76,7 @@ rsomics-bam idxstats sample.bam
 rsomics-bam merge lane1.bam lane2.cram --reference reference.fa -o merged.bam
 rsomics-bam markdup -r fixed-and-sorted.bam -o deduplicated.bam
 rsomics-bam mpileup -f reference.fa -Q 20 input.bam
+rsomics-bam phase -o phase.txt -b haplotypes input.bam
 rsomics-bam reheader replacement.sam input.bam -o reheadered.bam
 rsomics-bam reset --keep-tag RG,BC aligned.bam -o unmapped.bam
 rsomics-bam sort -m 768M -o sorted.bam input.bam
@@ -114,6 +117,18 @@ quality calibration, insertion and deletion controls, indexed regions, BED
 regions, and uncovered-reference filling. Named output is transactional and
 the shared JSON envelope requires a separate named sequence output. Additional
 threads decompress alignment input; block-parallel calling is not yet exposed.
+`phase` consumes coordinate-sorted SAM, BAM, or reference-backed CRAM and emits
+the samtools 1.24 `PS`, `FL`, `M`, and `EV` report. The observable upstream
+heterozygous-call default is preserved at `-q 37`. `-b` adds transactional
+haplotype 0, haplotype 1, and chimera alignment outputs in SAM, BAM, or CRAM;
+CRAM output requires an indexed reference. Phased records receive `ZP:A:Y`.
+Read identity uses the complete query name, evidence rows have a deterministic
+order, marker indexes restart on each reference, and a zero-variant run
+preserves every accepted input record instead of reproducing the corresponding
+samtools data-loss behavior. The local window is limited to 1 through 23,
+depth is limited to 65,535, and an oversized connected phase set fails before
+allocating beyond its declared workspace. Site-list modes and HTSlib
+input/output option strings are not exposed.
 `ampliconclip` consumes coordinate-ordered BAM and a three- or six-column
 primer BED, then writes clipped BAM plus optional statistics, rejects, and
 per-primer counts. `ampliconstats` consumes coordinate-ordered clipped BAM and
@@ -213,6 +228,9 @@ BED6. Named outputs are transactional, reference-backed CRAM uses `-T`, and
 machine summaries stay separate through the shared JSON envelope.
 
 Stable behavior is tested against samtools 1.24 across SAM, BAM, and CRAM.
+Read-backed phasing is report-matched across its stable option matrix and
+record-matched for SAM, BAM, and CRAM partitions after normalizing the
+upstream evidence-row iteration order and known marker-index defect.
 Coverage summaries, BED coverage totals, custom indexes, filtering, depth
 limits, regions, and CRAM quality semantics are byte-matched to samtools 1.24.
 Read-group editing is field-matched across new, existing, implicit, overwrite,

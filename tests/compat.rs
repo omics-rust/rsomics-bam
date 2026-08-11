@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
@@ -72,6 +73,309 @@ fn assert_samtools_1_24() {
     let output = run_samtools(&["--version"]);
     let version = String::from_utf8(output.stdout).unwrap();
     assert!(version.starts_with("samtools 1.24\n"), "{version}");
+}
+
+fn normalize_phase_report(output: &[u8]) -> String {
+    let text = String::from_utf8(output.to_vec()).unwrap();
+    let mut normalized = String::new();
+    let mut evidence = Vec::new();
+    let flush = |normalized: &mut String, evidence: &mut Vec<&str>| {
+        evidence.sort_unstable();
+        for line in evidence.drain(..) {
+            normalized.push_str(line);
+            normalized.push('\n');
+        }
+    };
+    for line in text.lines() {
+        if line.starts_with("EV\t") {
+            evidence.push(line);
+        } else {
+            flush(&mut normalized, &mut evidence);
+            normalized.push_str(line);
+            normalized.push('\n');
+        }
+    }
+    flush(&mut normalized, &mut evidence);
+    normalized
+}
+
+fn normalize_phase_marker_indexes(output: &[u8]) -> String {
+    let report = normalize_phase_report(output);
+    let mut normalized = String::new();
+    let mut reference = String::new();
+    let mut marker = 0;
+    let mut block_start = 0;
+    for line in report.lines() {
+        let mut fields: Vec<_> = line.split('\t').map(str::to_owned).collect();
+        match fields.first().map(String::as_str) {
+            Some("PS") => {
+                if fields[1] != reference {
+                    reference.clone_from(&fields[1]);
+                    marker = 0;
+                }
+                block_start = marker + 1;
+            }
+            Some("M0" | "M1" | "M2") => {
+                marker += 1;
+                fields[6] = marker.to_string();
+            }
+            Some("EV") => fields[3] = block_start.to_string(),
+            _ => {}
+        }
+        normalized.push_str(&fields.join("\t"));
+        normalized.push('\n');
+    }
+    normalized
+}
+
+fn phase_reference(directory: &Path) -> PathBuf {
+    let reference = directory.join("phase-reference.fa");
+    fs::write(&reference, format!(">chr1\n{}\n", "A".repeat(1000))).unwrap();
+    run_samtools(&["faidx", reference.to_str().unwrap()]);
+    reference
+}
+
+fn phase_adversarial_alignment(directory: &Path) -> PathBuf {
+    const SEQUENCES: [&str; 12] = [
+        "ACGTACGTAA",
+        "ACGTACGTAA",
+        "TCGTACGTAA",
+        "TCGTACGTAA",
+        "ACGTTCGTAA",
+        "ACGTTCGTAA",
+        "TCGTTCGTAA",
+        "TCGTTCGTAA",
+        "ACGTACGTAA",
+        "TCGTTCGTAA",
+        "ACGTACGTAA",
+        "TCGTTCGTAA",
+    ];
+    let mut source =
+        String::from("@HD\tVN:1.6\tSO:coordinate\n@SQ\tSN:chr1\tLN:1000\n@SQ\tSN:chr2\tLN:1000\n");
+    for (group, (reference, position)) in [
+        ("a", ("chr1", 100)),
+        ("b", ("chr1", 300)),
+        ("c", ("chr2", 50)),
+    ] {
+        for (index, sequence) in SEQUENCES.iter().enumerate() {
+            let sequence = if group == "b" {
+                if sequence.starts_with('T') {
+                    "TCGTACGTAA"
+                } else {
+                    "ACGTACGTAA"
+                }
+            } else {
+                sequence
+            };
+            let flag = if group == "a" && index == 11 { 2048 } else { 0 };
+            let mapping_quality = if group == "a" && index == 10 { 0 } else { 60 };
+            let quality = if group == "a" && index == 9 {
+                "!!!!!!!!!!"
+            } else {
+                "IIIIIIIIII"
+            };
+            writeln!(
+                source,
+                "{group}{}\t{flag}\t{reference}\t{position}\t{mapping_quality}\t10M\t*\t0\t0\t{sequence}\t{quality}\tNH:i:1",
+                index + 1
+            )
+            .unwrap();
+        }
+        if group == "a" {
+            for (name, flag) in [("secondary", 256), ("qcfail", 512), ("duplicate", 1024)] {
+                writeln!(
+                    source,
+                    "{name}\t{flag}\t{reference}\t{position}\t60\t10M\t*\t0\t0\tTCGTTCGTAA\tIIIIIIIIII"
+                )
+                .unwrap();
+            }
+        }
+    }
+    source.push_str("unmapped\t4\t*\t0\t0\t*\t*\t0\t0\tACGT\tIIII\n");
+    let path = directory.join("phase-adversarial.sam");
+    fs::write(&path, source).unwrap();
+    path
+}
+
+fn phase_chimera_alignment(directory: &Path) -> PathBuf {
+    let mut source = String::from("@HD\tVN:1.6\tSO:coordinate\n@SQ\tSN:chr1\tLN:1000\n");
+    for index in 1..=6 {
+        writeln!(
+            source,
+            "a{index}\t0\tchr1\t100\t60\t12M\t*\t0\t0\tAAAAAAAAAAAA\tIIIIIIIIIIII"
+        )
+        .unwrap();
+        writeln!(
+            source,
+            "t{index}\t0\tchr1\t100\t60\t12M\t*\t0\t0\tTTTTTTTTTTTT\tIIIIIIIIIIII"
+        )
+        .unwrap();
+    }
+    source.push_str("head\t0\tchr1\t100\t60\t12M\t*\t0\t0\tAAAAAAATTTTT\tIIIIIIIIIIII\n");
+    source.push_str("tail\t0\tchr1\t100\t60\t12M\t*\t0\t0\tTTTTTAAAAAAA\tIIIIIIIIIIII\n");
+    let path = directory.join("phase-chimera.sam");
+    fs::write(&path, source).unwrap();
+    path
+}
+
+fn normalized_alignment_records(path: &Path, reference: &Path) -> Vec<Vec<u8>> {
+    let mut arguments = vec!["view", "--no-PG"];
+    if path
+        .extension()
+        .is_some_and(|extension| extension == "cram")
+    {
+        arguments.extend(["-T", reference.to_str().unwrap()]);
+    }
+    arguments.push(path.to_str().unwrap());
+    run_samtools(&arguments)
+        .stdout
+        .split(|&byte| byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| {
+            let mut fields: Vec<_> = line.split(|&byte| byte == b'\t').collect();
+            fields[11..].sort_unstable();
+            fields.join(&b'\t')
+        })
+        .collect()
+}
+
+#[test]
+#[ignore = "release oracle: requires samtools 1.24"]
+fn phase_matches_samtools_1_24_across_inputs_options_and_partitions() {
+    assert_samtools_1_24();
+    let directory = tempfile::tempdir().unwrap();
+    let sam = golden("phase.sam");
+    let bam = directory.path().join("phase.bam");
+    let cram = directory.path().join("phase.cram");
+    let reference = phase_reference(directory.path());
+    let adversarial = phase_adversarial_alignment(directory.path());
+    let chimeras = phase_chimera_alignment(directory.path());
+    run_samtools(&[
+        "view",
+        "-b",
+        "-o",
+        bam.to_str().unwrap(),
+        sam.to_str().unwrap(),
+    ]);
+    run_samtools(&[
+        "view",
+        "-C",
+        "-T",
+        reference.to_str().unwrap(),
+        "-o",
+        cram.to_str().unwrap(),
+        sam.to_str().unwrap(),
+    ]);
+
+    for input in [&sam, &bam, &cram] {
+        for options in [
+            Vec::new(),
+            vec!["-k", "1"],
+            vec!["-k", "3"],
+            vec!["-q", "40"],
+            vec!["-Q", "41"],
+            vec!["-D", "11"],
+            vec!["-F"],
+        ] {
+            let mut ours = vec!["phase"];
+            let mut oracle = vec!["phase"];
+            ours.extend(options.iter().copied());
+            oracle.extend(options.iter().copied());
+            if input == &cram {
+                ours.extend(["--reference", reference.to_str().unwrap()]);
+                oracle.extend(["--reference", reference.to_str().unwrap()]);
+            }
+            ours.push(input.to_str().unwrap());
+            oracle.push(input.to_str().unwrap());
+            assert_eq!(
+                normalize_phase_report(&run_ours(&ours).stdout),
+                normalize_phase_report(&run_samtools(&oracle).stdout),
+                "{} {options:?}",
+                input.display()
+            );
+        }
+    }
+
+    for options in [Vec::new(), vec!["-k", "1"], vec!["-F"]] {
+        let mut ours = vec!["phase"];
+        let mut oracle = vec!["phase"];
+        ours.extend(options.iter().copied());
+        oracle.extend(options.iter().copied());
+        ours.push(adversarial.to_str().unwrap());
+        oracle.push(adversarial.to_str().unwrap());
+        assert_eq!(
+            normalize_phase_marker_indexes(&run_ours(&ours).stdout),
+            normalize_phase_marker_indexes(&run_samtools(&oracle).stdout),
+            "adversarial {options:?}"
+        );
+    }
+
+    for options in [Vec::new(), vec!["-F"]] {
+        let mut ours = vec!["phase"];
+        let mut oracle = vec!["phase"];
+        ours.extend(options.iter().copied());
+        oracle.extend(options.iter().copied());
+        ours.push(chimeras.to_str().unwrap());
+        oracle.push(chimeras.to_str().unwrap());
+        assert_eq!(
+            normalize_phase_report(&run_ours(&ours).stdout),
+            normalize_phase_report(&run_samtools(&oracle).stdout),
+            "chimeras {options:?}"
+        );
+    }
+
+    for format in ["sam", "bam", "cram"] {
+        let ours = directory.path().join(format!("ours-{format}"));
+        let oracle = directory.path().join(format!("oracle-{format}"));
+        let mut ours_arguments = vec!["phase", "--no-pg", "-O", format, "-b"];
+        let mut oracle_arguments = vec!["phase", "--no-PG", "--output-fmt", format, "-b"];
+        ours_arguments.push(ours.to_str().unwrap());
+        oracle_arguments.push(oracle.to_str().unwrap());
+        if format == "cram" {
+            ours_arguments.extend(["--reference", reference.to_str().unwrap()]);
+            oracle_arguments.extend(["--reference", reference.to_str().unwrap()]);
+        }
+        ours_arguments.push(sam.to_str().unwrap());
+        oracle_arguments.push(sam.to_str().unwrap());
+        run_ours(&ours_arguments);
+        run_samtools(&oracle_arguments);
+
+        for middle in ["0", "1", "chimera"] {
+            let ours = PathBuf::from(format!("{}.{}.{}", ours.display(), middle, format));
+            let oracle = PathBuf::from(format!("{}.{}.{}", oracle.display(), middle, format));
+            assert_eq!(
+                normalized_alignment_records(&ours, &reference),
+                normalized_alignment_records(&oracle, &reference),
+                "format={format} partition={middle}"
+            );
+        }
+    }
+
+    for (case, input, options) in [
+        ("ambiguous", sam.as_path(), vec!["-A"]),
+        ("chimeras", chimeras.as_path(), Vec::new()),
+    ] {
+        let ours = directory.path().join(format!("ours-{case}"));
+        let oracle = directory.path().join(format!("oracle-{case}"));
+        let mut ours_arguments = vec!["phase", "--no-pg", "-O", "bam"];
+        let mut oracle_arguments = vec!["phase", "--no-PG", "--output-fmt", "bam"];
+        ours_arguments.extend(options.iter().copied());
+        oracle_arguments.extend(options.iter().copied());
+        ours_arguments.extend(["-b", ours.to_str().unwrap(), input.to_str().unwrap()]);
+        oracle_arguments.extend(["-b", oracle.to_str().unwrap(), input.to_str().unwrap()]);
+        run_ours(&ours_arguments);
+        run_samtools(&oracle_arguments);
+
+        for middle in ["0", "1", "chimera"] {
+            let ours = PathBuf::from(format!("{}.{}.bam", ours.display(), middle));
+            let oracle = PathBuf::from(format!("{}.{}.bam", oracle.display(), middle));
+            assert_eq!(
+                normalized_alignment_records(&ours, &reference),
+                normalized_alignment_records(&oracle, &reference),
+                "case={case} partition={middle}"
+            );
+        }
+    }
 }
 
 #[test]

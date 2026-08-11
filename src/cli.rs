@@ -82,6 +82,8 @@ enum Command {
     Markdup(commands::markdup::Arguments),
     /// Generate per-position text pileup
     Mpileup(commands::mpileup::Arguments),
+    /// Call and phase heterozygous SNPs
+    Phase(commands::phase::Arguments),
     /// Check alignment headers and format-specific end markers
     Quickcheck(commands::quickcheck::Arguments),
     /// Replace a BAM header without reencoding alignment blocks
@@ -178,6 +180,9 @@ pub(crate) enum CommandOutput {
     Mpileup {
         summary: mpileup::Summary,
     },
+    Phase {
+        summary: crate::phase::Summary,
+    },
     Quickcheck {
         report: quickcheck::Report,
     },
@@ -244,6 +249,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Merge(arguments) => commands::merge::execute(arguments, cli.output.json),
         Command::Markdup(arguments) => commands::markdup::execute(arguments, cli.output.json),
         Command::Mpileup(arguments) => commands::mpileup::execute(arguments, cli.output.json),
+        Command::Phase(arguments) => commands::phase::execute(arguments, cli.output.json),
         Command::Quickcheck(arguments) => commands::quickcheck::execute(arguments, cli.output.json),
         Command::Reheader(arguments) => commands::reheader::execute(arguments, cli.output.json),
         Command::Reset(arguments) => commands::reset::execute(arguments, cli.output.json),
@@ -307,6 +313,32 @@ mod tests {
             "--homopoly-redux",
             "--block-size",
         ] {
+            assert!(!help.contains(excluded), "unexpected {excluded} in {help}");
+        }
+    }
+
+    #[test]
+    fn phase_help_exposes_the_stable_slice() {
+        let help = rsomics_help::try_parse_from::<Cli, _, _>(["rsomics-bam", "phase", "--help"])
+            .unwrap_err()
+            .to_string();
+        for option in [
+            "-o, --output",
+            "-b, --output-prefix",
+            "-O, --output-fmt",
+            "-k <INT>",
+            "-q <INT>",
+            "-Q, --min-BQ",
+            "-D <INT>",
+            "-F",
+            "-A",
+            "--reference",
+            "--no-pg",
+            "-@, --threads",
+        ] {
+            assert!(help.contains(option), "missing {option} in {help}");
+        }
+        for excluded in ["-l", "-e", "--input-fmt-option", "--output-fmt-option"] {
             assert!(!help.contains(excluded), "unexpected {excluded} in {help}");
         }
     }

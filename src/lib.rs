@@ -49,6 +49,8 @@ pub mod markdup;
 pub mod merge;
 /// Per-position pileup generation.
 pub mod mpileup;
+/// Read-backed heterozygous SNP phasing.
+pub mod phase;
 /// Alignment-header program provenance.
 mod program;
 /// Alignment integrity checks.

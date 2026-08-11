@@ -1,0 +1,33 @@
+CC
+CC	Descriptions:
+CC
+CC	  CC      comments
+CC	  PS      start of a phase set
+CC	  FL      filtered region
+CC	  M[012]  markers; 0 for singletons, 1 for phased and 2 for filtered
+CC	  EV      supporting reads; SAM format
+CC	  //      end of a phase set
+CC
+CC	Formats of PS, FL and M[012] lines (1-based coordinates):
+CC
+CC	  PS  chr  phaseSetStart  phaseSetEnd
+CC	  FL  chr  filterStart    filterEnd
+CC	  M?  chr  PS  pos  allele0  allele1  hetIndex  #supports0  #errors0  #supp1  #err1
+CC
+CC
+PS	chr1	100	104
+M1	chr1	100	100	T	A	1	4	0	6	2
+M1	chr1	100	104	T	A	2	4	0	6	2
+EV	0	chr1	1	40	2M	*	0	0	AA	*	YP:i:1	YF:i:0	YI:i:2	YO:i:0	YS:i:100
+EV	0	chr1	1	40	2M	*	0	0	TT	*	YP:i:0	YF:i:0	YI:i:2	YO:i:0	YS:i:100
+EV	0	chr1	1	40	2M	*	0	0	AA	*	YP:i:1	YF:i:0	YI:i:2	YO:i:0	YS:i:100
+EV	0	chr1	1	40	2M	*	0	0	TT	*	YP:i:0	YF:i:0	YI:i:2	YO:i:0	YS:i:100
+EV	0	chr1	1	40	2M	*	0	0	AA	*	YP:i:1	YF:i:0	YI:i:2	YO:i:0	YS:i:100
+EV	0	chr1	1	40	2M	*	0	0	TT	*	YP:i:0	YF:i:0	YI:i:2	YO:i:0	YS:i:100
+EV	0	chr1	1	40	2M	*	0	0	AA	*	YP:i:1	YF:i:0	YI:i:2	YO:i:0	YS:i:100
+EV	0	chr1	1	40	2M	*	0	0	AT	*	YP:i:1	YF:i:0	YI:i:1	YO:i:1	YS:i:100
+EV	0	chr1	1	40	2M	*	0	0	AT	*	YP:i:1	YF:i:0	YI:i:1	YO:i:1	YS:i:100
+EV	0	chr1	1	40	2M	*	0	0	TA	*	YP:i:1	YF:i:0	YI:i:1	YO:i:1	YS:i:100
+EV	0	chr1	1	40	2M	*	0	0	TA	*	YP:i:1	YF:i:0	YI:i:1	YO:i:1	YS:i:100
+EV	0	chr1	1	40	2M	*	0	0	TT	*	YP:i:0	YF:i:0	YI:i:2	YO:i:0	YS:i:100
+//
