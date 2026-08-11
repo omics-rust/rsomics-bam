@@ -102,5 +102,6 @@ jobs:
           cargo test --locked --test merge -- --ignored
           cargo test --locked --test reset -- --ignored
           cargo test --locked --test sort -- --ignored
+          cargo test --locked --test split_compat read_group_and_integer_tag_outputs_match_samtools_1_24
           cargo test --locked --test stats -- --ignored
           cargo test --locked --test to_bed_compat -- --ignored

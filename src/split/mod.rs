@@ -72,7 +72,7 @@ pub struct Summary {
 }
 
 pub fn run(input_path: &Path, options: Options<'_>) -> Result<Summary> {
-    validate(input_path, options)?;
+    validate(options)?;
     let mut reader = input::open(input_path, options.reference, options.additional_threads)?;
     let mut header = reader.read_header(input_path)?;
     let mut unaccounted_header = options
@@ -126,7 +126,7 @@ pub fn run(input_path: &Path, options: Options<'_>) -> Result<Summary> {
     Ok(summary)
 }
 
-fn validate(input_path: &Path, options: Options<'_>) -> Result<()> {
+fn validate(options: Options<'_>) -> Result<()> {
     if options.additional_threads > 256 {
         return Err(RsomicsError::ConfigError(
             "split additional thread count cannot exceed 256".to_owned(),
@@ -165,11 +165,6 @@ fn validate(input_path: &Path, options: Options<'_>) -> Result<()> {
     if options.zero_pad > 128 {
         return Err(RsomicsError::ConfigError(
             "split integer padding cannot exceed 128".to_owned(),
-        ));
-    }
-    if input_path == Path::new("-") {
-        return Err(RsomicsError::ConfigError(
-            "split requires a file-backed input".to_owned(),
         ));
     }
     if options.format == Format::Cram && options.reference.is_none() {

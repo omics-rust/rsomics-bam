@@ -28,6 +28,7 @@ pub(crate) mod reheader;
 pub(crate) mod reset;
 pub(crate) mod samples;
 pub(crate) mod sort;
+pub(crate) mod split;
 pub(crate) mod stats;
 pub(crate) mod to_bed;
 pub(crate) mod view;

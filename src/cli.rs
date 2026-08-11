@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::{
     addreplacerg, ampliconclip, ampliconstats, bedcov, calmd, cat, collate, commands, coverage,
     depad, depth, fixmate, flags, flagstat, head, idxstats, index, markdup, merge, mpileup,
-    quickcheck, reheader, reset, samples, sort, stats, to_bed, view,
+    quickcheck, reheader, reset, samples, sort, split, stats, to_bed, view,
 };
 
 const META: ToolMeta = ToolMeta {
@@ -94,6 +94,8 @@ enum Command {
     Samples(commands::samples::Arguments),
     /// Sort alignments with bounded memory
     Sort(commands::sort::Arguments),
+    /// Partition alignments into a complete transactional output set
+    Split(commands::split::Arguments),
     /// Produce comprehensive alignment statistics
     Stats(Box<commands::stats::Arguments>),
     /// Convert alignments to BED intervals
@@ -198,6 +200,9 @@ pub(crate) enum CommandOutput {
     Sort {
         summary: sort::Summary,
     },
+    Split {
+        summary: split::Summary,
+    },
     Stats {
         report: Box<stats::Report>,
     },
@@ -255,6 +260,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Reset(arguments) => commands::reset::execute(arguments, cli.output.json),
         Command::Samples(arguments) => commands::samples::execute(arguments, cli.output.json),
         Command::Sort(arguments) => commands::sort::execute(arguments, cli.output.json),
+        Command::Split(arguments) => commands::split::execute(arguments, cli.output.json),
         Command::Stats(arguments) => commands::stats::execute(*arguments, cli.output.json),
         Command::ToBed(arguments) => commands::to_bed::execute(arguments, cli.output.json),
         Command::View(arguments) => commands::view::execute(*arguments, cli.output.json),
@@ -341,6 +347,60 @@ mod tests {
         for excluded in ["-l", "-e", "--input-fmt-option", "--output-fmt-option"] {
             assert!(!help.contains(excluded), "unexpected {excluded} in {help}");
         }
+    }
+
+    #[test]
+    fn split_help_exposes_one_unified_partition_surface() {
+        let help = rsomics_help::try_parse_from::<Cli, _, _>(["rsomics-bam", "split", "--help"])
+            .unwrap_err()
+            .to_string();
+        for option in [
+            "--tag",
+            "--parts",
+            "--genes",
+            "--mates",
+            "-b, --output-prefix",
+            "-u, --unaccounted",
+            "--unaccounted-header",
+            "-O, --output-fmt",
+            "-M, --max-outputs",
+            "--zero-pad",
+            "--seed",
+            "--skip-unmapped",
+            "-T, --reference",
+            "-@, --threads",
+            "--no-pg",
+        ] {
+            assert!(help.contains(option), "missing {option} in {help}");
+        }
+        assert!(!help.contains("--filename-format"));
+    }
+
+    #[test]
+    fn split_mode_selectors_are_mutually_exclusive() {
+        assert!(
+            rsomics_help::try_parse_from::<Cli, _, _>([
+                "rsomics-bam",
+                "split",
+                "--tag",
+                "RG",
+                "--parts",
+                "2",
+                "--output-prefix",
+                "out",
+            ])
+            .is_err()
+        );
+        assert!(
+            rsomics_help::try_parse_from::<Cli, _, _>([
+                "rsomics-bam",
+                "split",
+                "--skip-unmapped",
+                "--output-prefix",
+                "out",
+            ])
+            .is_err()
+        );
     }
 
     #[test]

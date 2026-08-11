@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 use std::fs;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use noodles::bam;
 use rsomics_bam::split::{Format, Mode, Options, run};
@@ -862,4 +863,69 @@ fn mate_mode_projects_decoded_records_to_the_same_single_end_contract() {
             fs::read(fixture(&format!("mates/paired.{label}.sam"))).unwrap()
         );
     }
+}
+
+#[test]
+fn cli_reports_the_default_partition_set_as_json() {
+    let directory = tempfile::tempdir().unwrap();
+    let prefix = directory.path().join("sample");
+    let output = Command::new(env!("CARGO_BIN_EXE_rsomics-bam"))
+        .args(["--json", "split", "--no-pg", "--output-prefix"])
+        .arg(&prefix)
+        .arg(fixture("read-group/tworg.bam"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["result"]["command"], "split");
+    assert_eq!(value["result"]["summary"]["records"], 9);
+    assert_eq!(value["result"]["summary"]["outputs"][0]["label"], "rg1");
+    assert_eq!(value["result"]["summary"]["outputs"][0]["records"], 8);
+    assert_eq!(value["result"]["summary"]["outputs"][1]["label"], "rg2");
+    assert_eq!(value["result"]["summary"]["outputs"][1]["records"], 1);
+}
+
+#[test]
+fn cli_accepts_bam_on_standard_input_for_deterministic_parts() {
+    let directory = tempfile::tempdir().unwrap();
+    let prefix = directory.path().join("part");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rsomics-bam"))
+        .args([
+            "split",
+            "--no-pg",
+            "--parts",
+            "2",
+            "--seed",
+            "7",
+            "--output-prefix",
+        ])
+        .arg(&prefix)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(&fs::read(fixture("parts/diverse.bam")).unwrap())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let mut observed = names(&directory.path().join("part.0.bam"));
+    observed.extend(names(&directory.path().join("part.1.bam")));
+    observed.sort_unstable();
+    let mut expected = names(&fixture("parts/diverse.bam"));
+    expected.sort_unstable();
+    assert_eq!(observed, expected);
 }
