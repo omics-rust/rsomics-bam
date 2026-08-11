@@ -300,8 +300,37 @@ mod tests {
         ] {
             assert!(help.contains(option), "missing {option} in {help}");
         }
-        for excluded in ["--het-only", "--homopoly-redux", "--block-size"] {
+        for excluded in [
+            "--SC-cost",
+            "--default-qual",
+            "--het-only",
+            "--homopoly-redux",
+            "--block-size",
+        ] {
             assert!(!help.contains(excluded), "unexpected {excluded} in {help}");
+        }
+    }
+
+    #[test]
+    fn consensus_rejects_experimental_options() {
+        for arguments in [
+            ["--SC-cost", "20"],
+            ["--default-qual", "20"],
+            ["--het-only", "yes"],
+            ["--homopoly-redux", "0.1"],
+            ["--block-size", "1000"],
+        ] {
+            assert!(
+                rsomics_help::try_parse_from::<Cli, _, _>([
+                    "rsomics-bam",
+                    "consensus",
+                    arguments[0],
+                    arguments[1],
+                ])
+                .is_err(),
+                "accepted {}",
+                arguments[0]
+            );
         }
     }
 

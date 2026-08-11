@@ -88,6 +88,8 @@ jobs:
           cargo test --locked --test ampliconstats -- --ignored
           cargo test --locked --test calmd_compat -- --ignored
           cargo test --locked --test collate -- --ignored
+          cargo test --locked --lib consensus::run::tests:: -- --ignored
+          cargo test --locked --test consensus_compat -- --ignored
           cargo test --locked --test cat_reheader_compat
           cargo test --locked --test checksum -- --ignored
           cargo test --locked --test compat -- --ignored

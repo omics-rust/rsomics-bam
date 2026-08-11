@@ -63,7 +63,6 @@ pub(in crate::consensus) struct BayesianOptions {
     pub(in crate::consensus) indel_probability: f64,
     pub(in crate::consensus) heterozygous_scale: f64,
     pub(in crate::consensus) homopolymer_reduction: f64,
-    pub(in crate::consensus) mode: BayesianMode,
     pub(super) calibration: QualityCalibration,
 }
 
@@ -84,7 +83,6 @@ impl Default for BayesianOptions {
             indel_probability: 2e-4,
             heterozygous_scale: 1.0,
             homopolymer_reduction: 0.01,
-            mode: BayesianMode::Recall,
             calibration: QualityCalibration::default(),
         }
     }
@@ -398,16 +396,6 @@ impl Probabilities {
                 / 2.0)
                 .ln()
                 + options.heterozygous_scale.ln();
-
-            if options.mode == BayesianMode::Compatibility116 {
-                probabilities.both_gap_match[quality] = probabilities.both_match[quality];
-                probabilities.one_overcall[quality] = probabilities.one_match[quality];
-                probabilities.one_undercall[quality] = probabilities.one_match[quality];
-                probabilities.overcall_mismatch[quality] = probabilities.mismatch[quality];
-                probabilities.both_overcall[quality] = probabilities.mismatch[quality];
-                probabilities.both_undercall[quality] = probabilities.mismatch[quality];
-                continue;
-            }
 
             let overcall = calibrated_probability(options.calibration.overcall[quality]);
             probabilities.both_overcall[quality] = ((1.0 - overcall) / 3.0).ln();

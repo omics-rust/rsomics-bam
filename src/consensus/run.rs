@@ -148,7 +148,6 @@ impl Options {
                 "machine profiles require Bayesian consensus".to_owned(),
             ));
         };
-        caller.mode = BayesianMode::Recall;
         record.mode = BayesianMode::Recall;
         let calibration = match profile {
             Profile::Hifi => CalibrationPreset::Hifi,
@@ -210,7 +209,6 @@ impl Options {
         caller.minimum_depth = minimum_depth;
         caller.ambiguous = ambiguous;
         if compatibility_116 {
-            caller.mode = BayesianMode::Compatibility116;
             record.mode = BayesianMode::Compatibility116;
         }
         Ok(())
@@ -887,7 +885,6 @@ mod tests {
             assert_eq!(caller.heterozygous_scale, 0.37);
             assert_eq!(caller.homopolymer_reduction, 0.01);
             assert_eq!(record.homopolymer_fix, 0.3);
-            assert_eq!(caller.mode, BayesianMode::Recall);
             assert_eq!(record.mode, BayesianMode::Recall);
         }
 

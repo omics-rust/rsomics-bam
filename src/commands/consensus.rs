@@ -156,7 +156,7 @@ pub(crate) struct Arguments {
     #[arg(short = 'c', long = "call-fract", value_name = "FLOAT", value_parser = parse_fraction)]
     call_fraction: Option<f64>,
 
-    /// Required second-to-first support ratio for ambiguity
+    /// Required second-to-first support ratio for ambiguity [default: 0.5]
     #[arg(short = 'H', long = "het-fract", value_name = "FLOAT", value_parser = parse_fraction)]
     heterozygous_fraction: Option<f64>,
 
@@ -208,10 +208,6 @@ pub(crate) struct Arguments {
     #[arg(long = "NM-halo", visible_alias = "nm-halo", value_name = "INT")]
     mismatch_halo: Option<usize>,
 
-    /// Bayesian penalty assigned around soft clips
-    #[arg(long = "SC-cost", visible_alias = "soft-clip-cost", value_name = "INT")]
-    soft_clip_cost: Option<u32>,
-
     /// Scale mapping quality inside the Bayesian model
     #[arg(long = "scale-MQ", visible_alias = "scale-mq", value_name = "FLOAT", value_parser = parse_positive_f64)]
     mapping_quality_scale: Option<f64>,
@@ -223,10 +219,6 @@ pub(crate) struct Arguments {
     /// Upper mapping-quality cap inside the Bayesian model
     #[arg(long = "high-MQ", visible_alias = "high-mq", value_name = "INT")]
     high_mapping_quality: Option<u8>,
-
-    /// Quality used when an alignment omits base qualities
-    #[arg(long = "default-qual", value_name = "INT", value_parser = clap::value_parser!(u8).range(0..=100))]
-    default_quality: Option<u8>,
 
     /// Prior probability of a heterozygous site
     #[arg(long = "P-het", visible_alias = "p-het", value_name = "FLOAT", value_parser = parse_probability)]
@@ -342,7 +334,7 @@ fn build_simple(arguments: &Arguments) -> Result<Options> {
         arguments.use_quality && !arguments.no_use_quality,
         arguments.minimum_base_quality,
         arguments.minimum_depth,
-        arguments.heterozygous_fraction.unwrap_or(0.15),
+        arguments.heterozygous_fraction.unwrap_or(0.5),
         arguments.ambiguous,
     )?;
     Ok(options)
@@ -386,11 +378,11 @@ fn build_bayesian(arguments: &Arguments) -> Result<Options> {
         adjust_mapping_quality: arguments.adjust_mapping_quality
             || !arguments.no_adjust_mapping_quality,
         mismatch_halo: arguments.mismatch_halo.unwrap_or(50),
-        soft_clip_cost: arguments.soft_clip_cost.unwrap_or(60),
+        soft_clip_cost: 60,
         mapping_quality_scale: arguments.mapping_quality_scale,
         minimum_mapping_quality: arguments.low_mapping_quality,
         maximum_mapping_quality: arguments.high_mapping_quality.unwrap_or(60),
-        default_quality: arguments.default_quality.unwrap_or(10),
+        default_quality: 10,
         heterozygous_probability: arguments.heterozygous_probability.unwrap_or(1e-3),
         indel_probability: arguments.indel_probability.unwrap_or(2e-4),
         heterozygous_scale: arguments.heterozygous_scale,
@@ -424,11 +416,9 @@ fn has_bayesian_arguments(arguments: &Arguments) -> bool {
         || arguments.no_adjust_mapping_quality
         || arguments.adjust_mapping_quality
         || arguments.mismatch_halo.is_some()
-        || arguments.soft_clip_cost.is_some()
         || arguments.mapping_quality_scale.is_some()
         || arguments.low_mapping_quality.is_some()
         || arguments.high_mapping_quality.is_some()
-        || arguments.default_quality.is_some()
         || arguments.heterozygous_probability.is_some()
         || arguments.indel_probability.is_some()
         || arguments.heterozygous_scale.is_some()

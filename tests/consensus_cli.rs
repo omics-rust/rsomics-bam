@@ -60,3 +60,32 @@ fn consensus_failure_preserves_existing_output() {
     assert!(!result.status.success());
     assert_eq!(std::fs::read(output).unwrap(), b"preserve me\n");
 }
+
+#[test]
+fn simple_default_uses_observable_heterozygous_fraction() {
+    fn run(extra: &[&str]) -> Vec<u8> {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_rsomics-bam"));
+        command.args([
+            "consensus",
+            "--mode",
+            "simple",
+            "--ambig",
+            "--format",
+            "pileup",
+        ]);
+        command.args(extra);
+        command.arg(root().join("consen1.sam"));
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        output.stdout
+    }
+
+    let default = run(&[]);
+
+    assert_eq!(default, run(&["--het-fract", "0.5"]));
+    assert_ne!(default, run(&["--het-fract", "0.15"]));
+}
