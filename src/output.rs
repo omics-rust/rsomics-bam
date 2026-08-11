@@ -41,14 +41,14 @@ where
     BamParallelLevel(bam::io::Writer<bgzf::io::MultithreadedWriter<W>>),
 }
 
-pub(crate) struct TransactionalFile<'a> {
-    target: &'a Path,
+pub(crate) struct TransactionalFile {
+    target: PathBuf,
     temporary: tempfile::NamedTempFile,
     permissions: Option<fs::Permissions>,
 }
 
-impl<'a> TransactionalFile<'a> {
-    pub(crate) fn new(target: &'a Path) -> Result<Self> {
+impl TransactionalFile {
+    pub(crate) fn new(target: &Path) -> Result<Self> {
         let parent = target
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
@@ -74,7 +74,7 @@ impl<'a> TransactionalFile<'a> {
         }
         let permissions = metadata.map(|metadata| metadata.permissions());
         Ok(Self {
-            target,
+            target: target.to_owned(),
             temporary,
             permissions,
         })
@@ -102,7 +102,7 @@ impl<'a> TransactionalFile<'a> {
 
     pub(crate) fn commit(mut self) -> Result<()> {
         self.apply_permissions()?;
-        self.temporary.persist(self.target).map_err(|error| {
+        self.temporary.persist(&self.target).map_err(|error| {
             RsomicsError::Io(io::Error::new(
                 error.error.kind(),
                 format!(
@@ -123,17 +123,17 @@ impl<'a> TransactionalFile<'a> {
         let mut backups = Vec::new();
         for transaction in &transactions {
             if transaction.target.exists() {
-                let backup = reserve_backup_path(transaction.target)?;
-                if let Err(error) = fs::rename(transaction.target, &backup) {
+                let backup = reserve_backup_path(&transaction.target)?;
+                if let Err(error) = fs::rename(&transaction.target, &backup) {
                     return restore_backups(backups, error);
                 }
-                backups.push((transaction.target.to_path_buf(), backup));
+                backups.push((transaction.target.clone(), backup));
             }
         }
 
         let mut committed = Vec::new();
         for transaction in transactions {
-            let target = transaction.target.to_path_buf();
+            let target = transaction.target;
             if let Err(error) = transaction.temporary.persist(&target) {
                 return rollback_outputs(committed, backups, error.error);
             }
@@ -340,6 +340,21 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transaction_owns_its_target() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut transaction = {
+            let target = directory.path().join("owned");
+            TransactionalFile::new(&target).unwrap()
+        };
+        transaction.file_mut().write_all(b"complete").unwrap();
+        transaction.commit().unwrap();
+        assert_eq!(
+            fs::read(directory.path().join("owned")).unwrap(),
+            b"complete"
+        );
+    }
 
     #[test]
     fn grouped_commit_restores_every_prior_target() {
