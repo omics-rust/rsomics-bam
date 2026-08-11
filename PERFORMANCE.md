@@ -1,9 +1,64 @@
 # Performance
 
-The release gate compares `rsomics-bam view` with `samtools view` while both
-read and write BAM with four additional I/O threads. Every timing round is
-accepted only after samtools verifies both files and their decoded headers and
-records match.
+Performance gates compare each `rsomics-bam` operation with its samtools 1.24
+oracle on representative non-trivial input. Timing begins only after the
+operation-specific complete-output contract has been validated.
+
+## Checksum benchmark
+
+The 2026-08-11 checksum gate used revision
+`d77a55bccd17ce8472c142ec179b08eb29444aca`, Rust 1.91.0, and
+samtools/HTSlib 1.24 on an Apple M2 Mac mini with 8 GiB of memory and macOS
+26.6.1. One warm-up preceded twenty paired rounds in each mode, with command
+order alternating every round. `/usr/bin/time -lp` supplied wall, user,
+system, and maximum-resident-set measurements.
+
+```text
+rsomics-bam checksum -@ 0 input.bam > /dev/null
+samtools checksum -@ 0 input.bam > /dev/null
+
+rsomics-bam checksum -@ 4 input.bam > /dev/null
+samtools checksum -@ 4 input.bam > /dev/null
+```
+
+| Additional BAM workers | Tool | Mean wall time | Median wall time | Mean user time | Mean system time | Mean peak RSS | Median peak RSS |
+|---:|---|---:|---:|---:|---:|---:|---:|
+| 0 | `rsomics-bam checksum` | 0.9390 s | 0.9300 s | 0.8825 s | 0.0205 s | 5,246,157 bytes | 5,242,880 bytes |
+| 0 | `samtools checksum` | 0.9190 s | 0.9200 s | 0.8610 s | 0.0300 s | 6,593,741 bytes | 6,602,752 bytes |
+| 4 | `rsomics-bam checksum` | 0.6415 s | 0.6400 s | 1.1250 s | 0.1635 s | 5,813,862 bytes | 5,808,128 bytes |
+| 4 | `samtools checksum` | 0.6465 s | 0.6500 s | 1.0890 s | 0.1300 s | 8,258,355 bytes | 8,273,920 bytes |
+
+Single-thread mean wall time was 2.18% higher, while mean peak RSS was 20.44%
+lower. With four additional workers, mean wall time was 0.77% lower and mean
+peak RSS was 29.60% lower. The parallel wall-time difference was -0.0050
+seconds with a 0.0100-second paired sample standard deviation; rsomics won 12
+of 20 pairs and the paired t-statistic was -2.236. This gate establishes a
+strict memory advantage in both modes. The small parallel wall-time difference
+is treated as throughput parity rather than a material speed advantage.
+
+The fixture contained 4,000,260 records, occupied 85,567,476 bytes, and had
+SHA-256 `2c91241d03f4c692e8ce21a2f49110499c642d103e41a0859da4f42c531ba348`.
+Both tools produced byte-identical complete reports in both modes, with
+SHA-256 `35dd4634e0fcd871e6b668cf8f4c544df2c9ef0893aa308488d155f3989953c8`.
+The measured rsomics and samtools binaries had SHA-256 values
+`4318c733294f3f475e2febb9b15af51bc152df66ea3fd04e6ef87d8755ffd774`
+and `c265b440b09c4b21d1f25a65963cf907b0d9f9d18caa9382c31104158f89d027`.
+
+The single-thread timing ledger, summary, paired analysis, and environment
+record had SHA-256 values
+`974eef48df5259edb8aea51870558ab3654b035f6fe00cbb900870c4ec1f3ea8`,
+`af7ba2d98fee689a7c5c938fd45071aba38de6f950d83fa2199d31cda55a0d98`,
+`d2121bec1f1be6940c5d52097e8a9ecd83f17fbd5eaa8ae0a18a887cafb6c4a`,
+and `2066c22b667dea072ca63921f9914a900b6d09e69e1831adb131df20ce7d76a3`.
+The four-worker artifacts had SHA-256 values
+`bb39492ba58c95476182726809baccd3b64af2226b33b26a54605f398453ecea`,
+`cb78f927808f440c3cd00765a6f8891797060d3b9a0a05e5a184359b3f7315b0`,
+`fcafbe2bb6745c10d898cae0c5de415c68882cb9d9ce9d9a74a2b25e582cf8b6`,
+and `d1de0b5041f3c069b7c65d38dd4ec6a57ed27af6299f67058b35d45444b4dafb`.
+`tools/benchmark-checksum.sh`, SHA-256
+`40438d2b758383ce892302c5bc35112574fb8c49fb2af9f192900bce9be896f9`,
+reproduces report validation, provenance capture, alternating trials, and
+aggregation.
 
 ## Reset benchmark
 

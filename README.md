@@ -3,8 +3,8 @@
 `rsomics-bam` is a single command-line product for SAM, BAM, and CRAM
 inspection, filtering, conversion, validation, collation, mate repair, sorting,
 compressed file editing, read-group editing, duplicate marking, FASTQ import,
-padded-reference projection, alignment reset, amplicon sequencing, and pileup
-workflows.
+padded-reference projection, alignment reset, amplicon sequencing, pileup, and
+content-checksum workflows.
 
 ## Install
 
@@ -22,6 +22,7 @@ cargo install rsomics-bam
 | `bedcov` | Append alignment coverage totals to BED regions |
 | `calmd` | Recalculate alignment MD and NM tags from a reference |
 | `cat` | Concatenate BAM files without reencoding alignment blocks |
+| `checksum` | Compute content checksums or merge prior reports |
 | `collate` | Group all alignments for each read name with bounded memory |
 | `coverage` | Summarize reads, breadth, depth, and quality by reference |
 | `cram-size` | Report CRAM storage by content ID, codec, and data series |
@@ -56,6 +57,7 @@ rsomics-bam ampliconstats primers.bed clipped.bam -o amplicons.txt
 rsomics-bam bedcov targets.bed sample.bam
 rsomics-bam calmd -b -o recalculated.bam input.bam reference.fa
 rsomics-bam cat lane1.bam lane2.bam -o combined.bam
+rsomics-bam checksum -a -o sample.chk input.bam
 rsomics-bam collate -m 128M -o grouped.bam input.bam
 rsomics-bam coverage -q 20 -Q 20 sample.bam
 rsomics-bam cram-size -e sample.cram
@@ -87,6 +89,16 @@ request for CRAM decoding fails explicitly because the current decoder does
 not provide ordered parallel decoding. `index` uses up to four additional
 workers when `-@` is omitted; pass `-@ 0` for one-thread indexing. Named index
 outputs are committed only after the complete index has been built and parsed.
+`checksum` accepts one or more SAM, BAM, no-reference CRAM, FASTA, or FASTQ
+inputs, as well as standard input. It supports flag and tag selection, strand
+normalization, order-aware checksums, position, CIGAR, mate and QC columns,
+sanitization, tabular output,
+and biobambam2-compatible reports. Merge mode validates native and
+bamseqchksum versions, schemas, totals, and repeated rows before combining
+them. Named reports are transactional; `--json` requires one and returns typed
+groups through the shared envelope. Additional workers apply to named BAM
+input. Reference-backed CRAM and HTSlib input-format option strings are not
+exposed.
 `collate` accepts SAM, BAM, and CRAM input and writes BAM with contiguous QNAME
 groups. Its total record-memory budget and external merge fan-in are bounded;
 the order between groups is intentionally unspecified. Fast-mode filtering and
