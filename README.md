@@ -3,7 +3,8 @@
 `rsomics-bam` is a single command-line product for SAM, BAM, and CRAM
 inspection, filtering, conversion, validation, collation, mate repair, sorting,
 compressed file editing, read-group editing, duplicate marking, FASTQ import,
-padded-reference projection, amplicon sequencing, and pileup workflows.
+padded-reference projection, alignment reset, amplicon sequencing, and pileup
+workflows.
 
 ## Install
 
@@ -40,6 +41,7 @@ cargo install rsomics-bam
 | `mpileup` | Generate per-position text pileup |
 | `quickcheck` | Validate headers and format-specific end markers |
 | `reheader` | Replace a BAM header without reencoding alignment blocks |
+| `reset` | Restore primary alignments to unaligned reads |
 | `samples` | List samples and other read-group metadata |
 | `sort` | Sort alignments with bounded memory and external runs |
 | `stats` | Produce comprehensive alignment statistics |
@@ -68,6 +70,7 @@ rsomics-bam merge lane1.bam lane2.cram --reference reference.fa -o merged.bam
 rsomics-bam markdup -r fixed-and-sorted.bam -o deduplicated.bam
 rsomics-bam mpileup -f reference.fa -Q 20 input.bam
 rsomics-bam reheader replacement.sam input.bam -o reheadered.bam
+rsomics-bam reset --keep-tag RG,BC aligned.bam -o unmapped.bam
 rsomics-bam sort -m 768M -o sorted.bam input.bam
 rsomics-bam stats -r reference.fa -o sample.bamstat sample.bam
 ```
@@ -172,6 +175,13 @@ decompression. Coverage and cycle state are streamed or sparse, split report
 cardinality is bounded, and named main and split outputs commit as one group.
 `--json` requires a named compatibility report and returns the typed report
 through the shared `rsomics-help` envelope.
+`reset` accepts SAM, BAM, CRAM, and standard input and writes SAM, BAM, or
+CRAM. It drops secondary and supplementary alignments, restores reverse reads
+to read orientation, clears alignment and mate coordinates, removes the
+samtools default alignment tags, and supports explicit remove, keep, read-group,
+program-chain, and duplicate-flag policies. Named output is transactional;
+CRAM is fully decoded before commit. HTSlib input and output format-option
+strings are not exposed.
 
 Stable behavior is tested against samtools 1.24 across SAM, BAM, and CRAM.
 Coverage summaries, BED coverage totals, custom indexes, filtering, depth

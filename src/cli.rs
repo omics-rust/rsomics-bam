@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::{
     addreplacerg, ampliconclip, ampliconstats, bedcov, calmd, cat, collate, commands, coverage,
     depad, depth, fixmate, flags, flagstat, head, idxstats, index, markdup, merge, mpileup,
-    quickcheck, reheader, samples, sort, stats, view,
+    quickcheck, reheader, reset, samples, sort, stats, view,
 };
 
 const META: ToolMeta = ToolMeta {
@@ -82,6 +82,8 @@ enum Command {
     Quickcheck(commands::quickcheck::Arguments),
     /// Replace a BAM header without reencoding alignment blocks
     Reheader(commands::reheader::Arguments),
+    /// Restore primary alignments to unaligned reads
+    Reset(commands::reset::Arguments),
     /// List samples declared by alignment read groups
     Samples(commands::samples::Arguments),
     /// Sort alignments with bounded memory
@@ -120,6 +122,7 @@ pub(crate) enum CommandOutput {
     Mpileup { summary: mpileup::Summary },
     Quickcheck { report: quickcheck::Report },
     Reheader { summary: reheader::Summary },
+    Reset { summary: reset::Summary },
     Samples { report: samples::Report },
     Sort { summary: sort::Summary },
     Stats { report: Box<stats::Report> },
@@ -166,6 +169,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Mpileup(arguments) => commands::mpileup::execute(arguments, cli.output.json),
         Command::Quickcheck(arguments) => commands::quickcheck::execute(arguments, cli.output.json),
         Command::Reheader(arguments) => commands::reheader::execute(arguments, cli.output.json),
+        Command::Reset(arguments) => commands::reset::execute(arguments, cli.output.json),
         Command::Samples(arguments) => commands::samples::execute(arguments, cli.output.json),
         Command::Sort(arguments) => commands::sort::execute(arguments, cli.output.json),
         Command::Stats(arguments) => commands::stats::execute(*arguments, cli.output.json),
@@ -271,6 +275,30 @@ mod tests {
         assert!(reheader.contains("--no-pg"), "{reheader}");
         assert!(!reheader.contains("--command"), "{reheader}");
         assert!(!reheader.contains("--in-place"), "{reheader}");
+    }
+
+    #[test]
+    fn reset_help_exposes_the_stable_slice() {
+        let help = rsomics_help::try_parse_from::<Cli, _, _>(["rsomics-bam", "reset", "--help"])
+            .unwrap_err()
+            .to_string();
+        for option in [
+            "-o, --output",
+            "-O, --output-fmt",
+            "-x, --remove-tag",
+            "--keep-tag",
+            "--no-RG",
+            "--reject-PG",
+            "--dupflag",
+            "-T, --reference",
+            "-@, --threads",
+            "--no-pg",
+        ] {
+            assert!(help.contains(option), "missing {option} in {help}");
+        }
+        for excluded in ["--input-fmt-option", "--output-fmt-option"] {
+            assert!(!help.contains(excluded), "unexpected {excluded} in {help}");
+        }
     }
 
     #[test]

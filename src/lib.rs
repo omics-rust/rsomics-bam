@@ -53,6 +53,8 @@ mod program;
 pub mod quickcheck;
 /// Compressed-block BAM header replacement.
 pub mod reheader;
+/// Alignment reset to unaligned reads.
+pub mod reset;
 /// Read-group sample metadata.
 pub mod samples;
 /// Bounded-memory alignment sorting.
