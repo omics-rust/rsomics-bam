@@ -461,3 +461,57 @@ fn outputs_cannot_alias_primary_or_auxiliary_inputs() {
     );
     assert_eq!(fs::read(&header).unwrap(), original_header);
 }
+
+#[test]
+fn explicit_read_group_tag_synthesizes_undeclared_headers() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("input.sam");
+    let prefix = directory.path().join("sample");
+    write_sam(
+        &input,
+        "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:100\n@RG\tID:rg1\tSM:declared",
+        &[
+            "known\t0\tchr1\t1\t60\t1M\t*\t0\t0\tA\tF\tRG:Z:rg1",
+            "unknown\t0\tchr1\t2\t60\t1M\t*\t0\t0\tC\tF\tRG:Z:ghost",
+        ],
+    );
+    let summary = run(
+        &input,
+        Options {
+            mode: Mode::Tag(*b"RG"),
+            output_prefix: &prefix,
+            unaccounted: None,
+            unaccounted_header: None,
+            format: Format::Bam,
+            maximum_outputs: 100,
+            zero_pad: 0,
+            reference: None,
+            additional_threads: 0,
+            program: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        summary
+            .outputs
+            .iter()
+            .map(|output| output.records)
+            .sum::<u64>(),
+        2
+    );
+    let (header, records) = snapshot(&directory.path().join("sample.ghost.bam"));
+    assert_eq!(
+        header
+            .read_groups()
+            .keys()
+            .map(|id| id.as_slice())
+            .collect::<Vec<_>>(),
+        [b"ghost".as_slice()]
+    );
+    assert!(
+        header.read_groups()[b"ghost".as_slice()]
+            .other_fields()
+            .is_empty()
+    );
+    assert_eq!(records, [(b"unknown".to_vec(), b"ghost".to_vec())]);
+}

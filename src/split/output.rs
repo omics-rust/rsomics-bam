@@ -3,6 +3,7 @@ use std::ffi::OsString;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
+use noodles::sam::header::record::value::{Map, map::ReadGroup};
 use noodles::{fasta, sam};
 use noodles_util::alignment;
 use rsomics_bamio::raw::RawRecord;
@@ -18,6 +19,7 @@ pub(super) struct Router {
     prefix: PathBuf,
     maximum_outputs: usize,
     fixed_labels: bool,
+    read_group_headers: bool,
     destinations: HashMap<Vec<u8>, usize>,
     sinks: Vec<Sink>,
     unaccounted: Option<usize>,
@@ -101,7 +103,9 @@ impl Router {
             format: options.format,
             prefix: options.output_prefix.to_owned(),
             maximum_outputs: options.maximum_outputs,
-            fixed_labels: options.mode == Mode::ReadGroup || options.mode == Mode::Tag(*b"RG"),
+            fixed_labels: options.mode == Mode::ReadGroup,
+            read_group_headers: options.mode == Mode::ReadGroup
+                || options.mode == Mode::Tag(*b"RG"),
             destinations: HashMap::new(),
             sinks: Vec::new(),
             unaccounted: None,
@@ -212,12 +216,15 @@ impl Router {
         let encoded = label::encode(value)?;
         let path = output_path(&self.prefix, &encoded, self.format);
         let mut header = self.header.clone();
-        if self.fixed_labels && self.header.read_groups().contains_key(value) {
+        if self.read_group_headers && self.header.read_groups().contains_key(value) {
             header
                 .read_groups_mut()
                 .retain(|id, _| id.as_slice() == value);
-        } else if self.fixed_labels {
+        } else if self.read_group_headers {
             header.read_groups_mut().clear();
+            header
+                .read_groups_mut()
+                .insert(value.to_vec().into(), Map::<ReadGroup>::default());
         }
         let index = self.add_sink(encoded, path, header)?;
         self.destinations.insert(value.to_vec(), index);
