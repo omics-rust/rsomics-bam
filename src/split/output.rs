@@ -24,6 +24,7 @@ pub(super) struct Router {
     sinks: Vec<Sink>,
     unaccounted: Option<usize>,
     repository: Option<fasta::Repository>,
+    workers: WorkerAllocation,
 }
 
 struct Sink {
@@ -38,6 +39,30 @@ struct Sink {
 enum Writer {
     SamBam(output::Writer<File>),
     Cram(alignment::io::Writer<File>),
+}
+
+struct WorkerAllocation {
+    remaining: usize,
+    sinks: Option<usize>,
+}
+
+impl WorkerAllocation {
+    fn new(remaining: usize, sinks: Option<usize>) -> Self {
+        Self { remaining, sinks }
+    }
+
+    fn next(&mut self) -> usize {
+        match self.sinks.as_mut() {
+            Some(0) => 0,
+            Some(sinks) => {
+                let workers = self.remaining.div_ceil(*sinks);
+                self.remaining -= workers;
+                *sinks -= 1;
+                workers
+            }
+            None => std::mem::take(&mut self.remaining),
+        }
+    }
 }
 
 impl Writer {
@@ -100,6 +125,17 @@ impl Router {
         if let Mode::Genes(path) = options.mode {
             protected.push(path.to_owned());
         }
+        let known_sinks = match options.mode {
+            Mode::ReadGroup => Some(
+                header
+                    .read_groups()
+                    .len()
+                    .saturating_add(usize::from(options.unaccounted.is_some())),
+            ),
+            Mode::Parts { count, .. } => Some(count),
+            Mode::Genes(_) | Mode::Mates => Some(3),
+            Mode::Tag(_) => None,
+        };
         let mut router = Self {
             protected,
             header: header.clone(),
@@ -113,6 +149,7 @@ impl Router {
             sinks: Vec::new(),
             unaccounted: None,
             repository,
+            workers: WorkerAllocation::new(options.additional_threads, known_sinks),
         };
 
         match options.mode {
@@ -257,6 +294,12 @@ impl Router {
         if let Some(&index) = self.destinations.get(value) {
             return Ok(index);
         }
+        if self.destinations.len() >= self.maximum_outputs {
+            return Err(RsomicsError::ConfigError(format!(
+                "split output count exceeds {}",
+                self.maximum_outputs
+            )));
+        }
         let encoded = label::encode(value)?;
         let path = output_path(&self.prefix, &encoded, self.format);
         let mut header = self.header.clone();
@@ -294,6 +337,7 @@ impl Router {
         }
         let transaction = TransactionalFile::new(&path)?;
         let file = transaction.reopen()?;
+        let workers = self.workers.next();
         let writer = match self.format {
             Format::Sam | Format::Bam => {
                 let format = match self.format {
@@ -301,7 +345,8 @@ impl Router {
                     Format::Bam => output::Format::Bam,
                     Format::Cram => unreachable!(),
                 };
-                let mut writer = output::Writer::new(format, output::Compression::Default, 0, file);
+                let mut writer =
+                    output::Writer::new(format, output::Compression::Default, workers, file);
                 writer.write_header(&header)?;
                 Writer::SamBam(writer)
             }
@@ -352,4 +397,19 @@ fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
     let mut output = OsString::from(path.as_os_str());
     output.push(suffix);
     output.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_workers_are_bounded_and_balanced_for_known_sinks() {
+        let mut known = WorkerAllocation::new(5, Some(3));
+        assert_eq!([known.next(), known.next(), known.next()], [2, 2, 1]);
+        assert_eq!(known.next(), 0);
+
+        let mut dynamic = WorkerAllocation::new(5, None);
+        assert_eq!([dynamic.next(), dynamic.next()], [5, 0]);
+    }
 }
