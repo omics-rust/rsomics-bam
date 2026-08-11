@@ -14,6 +14,8 @@ pub mod bedcov;
 pub mod calmd;
 /// Compressed-block BAM concatenation.
 pub mod cat;
+/// Content checksums for alignment and sequence data.
+pub mod checksum;
 /// Bounded-memory read-name collation.
 pub mod collate;
 /// Per-reference alignment coverage summaries.

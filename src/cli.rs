@@ -44,6 +44,8 @@ enum Command {
     Calmd(commands::calmd::Arguments),
     /// Concatenate BAM files without reencoding alignment blocks
     Cat(commands::cat::Arguments),
+    /// Compute content checksums or merge prior reports
+    Checksum(commands::checksum::Arguments),
     /// Group alignments by read name with bounded memory
     Collate(commands::collate::Arguments),
     /// Summarize coverage by reference sequence
@@ -97,36 +99,99 @@ enum Command {
 #[derive(Debug, Serialize)]
 #[serde(tag = "command", rename_all = "kebab-case")]
 pub(crate) enum CommandOutput {
-    Addreplacerg { summary: addreplacerg::Summary },
-    Ampliconclip { run: ampliconclip::Run },
-    Ampliconstats { summary: ampliconstats::Summary },
-    Bedcov { summary: bedcov::Summary },
-    Calmd { summary: calmd::Summary },
-    Cat { summary: cat::Summary },
-    Collate { summary: collate::Summary },
-    Coverage { report: coverage::Report },
-    CramSize { report: crate::cram_size::Report },
-    Depth { summary: depth::Summary },
-    Depad { summary: depad::Summary },
-    Fixmate { summary: fixmate::Summary },
-    Flags { values: Vec<flags::FlagValue> },
-    Flagstat { counts: Box<flagstat::Counts> },
-    Fasta { summary: crate::fastx::Summary },
-    Fastq { summary: crate::fastx::Summary },
-    Head { summary: head::Summary },
-    Index { summaries: Vec<index::Summary> },
-    Idxstats { report: idxstats::Report },
-    Import { summary: crate::import::Summary },
-    Merge { summary: merge::Summary },
-    Markdup { summary: markdup::Summary },
-    Mpileup { summary: mpileup::Summary },
-    Quickcheck { report: quickcheck::Report },
-    Reheader { summary: reheader::Summary },
-    Reset { summary: reset::Summary },
-    Samples { report: samples::Report },
-    Sort { summary: sort::Summary },
-    Stats { report: Box<stats::Report> },
-    View { summary: view::Summary },
+    Addreplacerg {
+        summary: addreplacerg::Summary,
+    },
+    Ampliconclip {
+        run: ampliconclip::Run,
+    },
+    Ampliconstats {
+        summary: ampliconstats::Summary,
+    },
+    Bedcov {
+        summary: bedcov::Summary,
+    },
+    Calmd {
+        summary: calmd::Summary,
+    },
+    Cat {
+        summary: cat::Summary,
+    },
+    Checksum {
+        reports: Vec<crate::checksum::Report>,
+    },
+    Collate {
+        summary: collate::Summary,
+    },
+    Coverage {
+        report: coverage::Report,
+    },
+    CramSize {
+        report: crate::cram_size::Report,
+    },
+    Depth {
+        summary: depth::Summary,
+    },
+    Depad {
+        summary: depad::Summary,
+    },
+    Fixmate {
+        summary: fixmate::Summary,
+    },
+    Flags {
+        values: Vec<flags::FlagValue>,
+    },
+    Flagstat {
+        counts: Box<flagstat::Counts>,
+    },
+    Fasta {
+        summary: crate::fastx::Summary,
+    },
+    Fastq {
+        summary: crate::fastx::Summary,
+    },
+    Head {
+        summary: head::Summary,
+    },
+    Index {
+        summaries: Vec<index::Summary>,
+    },
+    Idxstats {
+        report: idxstats::Report,
+    },
+    Import {
+        summary: crate::import::Summary,
+    },
+    Merge {
+        summary: merge::Summary,
+    },
+    Markdup {
+        summary: markdup::Summary,
+    },
+    Mpileup {
+        summary: mpileup::Summary,
+    },
+    Quickcheck {
+        report: quickcheck::Report,
+    },
+    Reheader {
+        summary: reheader::Summary,
+    },
+    Reset {
+        summary: reset::Summary,
+    },
+    Samples {
+        report: samples::Report,
+    },
+    Sort {
+        summary: sort::Summary,
+    },
+    Stats {
+        report: Box<stats::Report>,
+    },
+    View {
+        summary: view::Summary,
+    },
 }
 
 #[must_use]
@@ -150,6 +215,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Bedcov(arguments) => commands::bedcov::execute(arguments, cli.output.json),
         Command::Calmd(arguments) => commands::calmd::execute(arguments, cli.output.json),
         Command::Cat(arguments) => commands::cat::execute(arguments, cli.output.json),
+        Command::Checksum(arguments) => commands::checksum::execute(arguments, cli.output.json),
         Command::Collate(arguments) => commands::collate::execute(arguments, cli.output.json),
         Command::Coverage(arguments) => commands::coverage::execute(arguments, cli.output.json),
         Command::CramSize(arguments) => commands::cram_size::execute(arguments, cli.output.json),

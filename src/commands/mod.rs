@@ -4,6 +4,7 @@ pub(crate) mod ampliconstats;
 pub(crate) mod bedcov;
 pub(crate) mod calmd;
 pub(crate) mod cat;
+pub(crate) mod checksum;
 pub(crate) mod collate;
 pub(crate) mod coverage;
 pub(crate) mod cram_size;
