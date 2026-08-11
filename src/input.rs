@@ -331,7 +331,7 @@ pub(crate) fn open(
         )),
         (Format::Bam, Compression::Bgzf) => {
             let inner: Box<dyn BufRead + Send> =
-                if let Some(workers) = additional_threads.checked_sub(1).and_then(NonZero::new) {
+                if let Some(workers) = NonZero::new(additional_threads) {
                     Box::new(bgzf::io::MultithreadedReader::with_worker_count(
                         workers, file,
                     ))
