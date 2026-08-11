@@ -5,6 +5,50 @@ read and write BAM with four additional I/O threads. Every timing round is
 accepted only after samtools verifies both files and their decoded headers and
 records match.
 
+## Reset benchmark
+
+The 2026-08-11 reset gate used feature revision
+`f1a88df13f6675e071f22d45c0f5c436ae8c930c`, Rust 1.91.0, and
+samtools/HTSlib 1.24 on an Apple M2 Mac mini with 8 GiB of memory and macOS
+26.6.1. One warm-up preceded twenty paired rounds with command order
+alternating every round. Both tools received four additional alignment I/O
+workers. `/usr/bin/time -lp` supplied wall, CPU, and maximum-resident-set
+measurements.
+
+```text
+rsomics-bam reset --no-PG -O bam -@ 4 -o ours.bam input.bam
+samtools reset --no-PG -O bam -@ 4 -o samtools.bam input.bam
+```
+
+| Tool | Mean wall time | Median wall time | Mean user time | Mean system time | Mean peak RSS | Median peak RSS |
+|---|---:|---:|---:|---:|---:|---:|
+| `rsomics-bam reset` | 1.6370 s | 1.6100 s | 6.3050 s | 0.3875 s | 7,468,646 bytes | 7,462,912 bytes |
+| `samtools reset` | 2.4725 s | 2.3500 s | 7.4905 s | 0.5040 s | 12,901,581 bytes | 12,869,632 bytes |
+
+`rsomics-bam reset` won all twenty pairs. It reduced mean wall time by 33.79%,
+mean user time by 15.83%, mean system time by 23.12%, and mean peak RSS by
+42.11%. The paired mean wall-time difference was -0.8355 seconds with a
+0.29694-second sample standard deviation and a paired t-statistic of -12.583.
+Exact-head CI run `31450388838` passed native Linux and macOS on x86_64 and
+aarch64; Linux x86_64 also passed the complete samtools 1.24 oracle.
+
+The fixture contained 4,000,260 records, occupied 99,545,915 bytes, and had
+SHA-256 `9f82e1faae07d53bf916689828146c6923714d08a29078df726d00284363b1b3`.
+Every warm-up and timed pair produced the same complete decoded header and
+record stream with SHA-256
+`8706d0a368bb61714d169e1045daf2489e03c0fe60f053be8fb26f920048a151`.
+The measured rsomics and samtools binaries had SHA-256 values
+`a06b3691c9143573fb89780110d0b9a4c86d12d8c51212a3e9406658ae803f8c`
+and `c265b440b09c4b21d1f25a65963cf907b0d9f9d18caa9382c31104158f89d027`.
+
+The environment record, complete timing ledger, generated summary, JSON
+command summary, and output-digest record had SHA-256 values
+`cb74871f338a66a166e9e7159c5b2aff018acea784e44dd2139bd35c36fbc3cf`,
+`cb009af15a72426ce077a3a82827cdeab27bf157641812af4a0e5286ca9b2b79`,
+`7ddddd37ebeeec9f659f569b35dd330efa6e1e210b75ea88c40ba8fa39afd15c`,
+`4821618ea7ee72b88f9c3abde30325c518fb218894d6f2f35b3f5a3db7a96675`,
+and `06271d69a5abc92c3a23b960fc42f93a14f664c89d51e180e75c3e49c63cad25`.
+
 ## Stats benchmark
 
 The 2026-08-11 stats gate used feature revision
@@ -1016,6 +1060,16 @@ values `136a8d3deca43fc072748b537f60df981eeb4d6bab0d10f58f5c2fb466f2b8cf`,
 and `481fb6fe8f02e462a701a9f022fb1c35c239172a546b3301ae44e33bf250287d`.
 
 ## Reproduction
+
+`benchmarks/reset-vs-samtools-macos.sh` performs alternating reset trials,
+compares the complete decoded alignment stream after every pair, and records
+macOS resource usage and artifact provenance:
+
+```sh
+RSOMICS_COMMIT=f1a88df benchmarks/reset-vs-samtools-macos.sh \
+  target/release/rsomics-bam /path/to/samtools input.bam \
+  /path/to/results 20 4
+```
 
 `benchmarks/cram-size-vs-samtools-macos.sh` compares complete reports
 byte-for-byte, batches short runs for timer resolution, alternates command
