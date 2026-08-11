@@ -4,7 +4,7 @@
 inspection, filtering, conversion, validation, collation, mate repair, sorting,
 compressed file editing, read-group editing, duplicate marking, FASTQ import,
 padded-reference projection, alignment reset, amplicon sequencing, consensus
-calling, pileup, read-backed phasing, and content-checksum and
+calling, pileup, read-backed phasing, alignment partitioning, and content-checksum and
 alignment-to-interval workflows.
 
 ## Install
@@ -48,6 +48,7 @@ cargo install rsomics-bam
 | `reset` | Restore primary alignments to unaligned reads |
 | `samples` | List samples and other read-group metadata |
 | `sort` | Sort alignments with bounded memory and external runs |
+| `split` | Partition alignments by read group, tag, part, gene, or mate |
 | `stats` | Produce comprehensive alignment statistics |
 | `to-bed` | Convert alignments to BED6, BED12, or BEDPE |
 | `view` | Filter records and convert to SAM or BAM |
@@ -80,6 +81,7 @@ rsomics-bam phase -o phase.txt -b haplotypes input.bam
 rsomics-bam reheader replacement.sam input.bam -o reheadered.bam
 rsomics-bam reset --keep-tag RG,BC aligned.bam -o unmapped.bam
 rsomics-bam sort -m 768M -o sorted.bam input.bam
+rsomics-bam split --genes genes.bed12 -b sample input.bam
 rsomics-bam stats -r reference.fa -o sample.bamstat sample.bam
 rsomics-bam to-bed --split-d -o blocks.bed alignments.bam
 ```
@@ -205,6 +207,13 @@ memory option is a total record budget, external merges use bounded fan-in,
 and named outputs replace their destination only after a complete BGZF stream
 passes validation. It uses up to four additional workers when `-@` is omitted;
 pass `-@ 0` for one-thread sorting.
+`split` accepts SAM, BAM, CRAM, and standard input and creates one transactional
+output set in SAM, BAM, or CRAM. It partitions by header read group by default;
+`--tag`, `--parts`, `--genes`, and `--mates` select auxiliary-value,
+deterministic random, exon-linked, and RSeQC-compatible mate projections.
+Output components are path-safe, cardinality is bounded, and existing targets
+remain unchanged unless every output finishes successfully. CRAM output
+requires an indexed reference.
 `stats` emits the complete samtools 1.24 alignment-statistics report for SAM,
 BAM, CRAM, and standard input. It supports references, target intervals,
 indexed regions and custom indexes, flag and read-group filters, mate-overlap
