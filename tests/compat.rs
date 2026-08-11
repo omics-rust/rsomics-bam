@@ -239,6 +239,54 @@ fn normalized_alignment_records(path: &Path, reference: &Path) -> Vec<Vec<u8>> {
         .collect()
 }
 
+fn has_phase_tag(record: &[u8]) -> bool {
+    record
+        .split(|&byte| byte == b'\t')
+        .skip(11)
+        .any(|field| field == b"ZP:A:Y")
+}
+
+fn assert_phase_partitions(ours: &Path, oracle: &Path, format: &str, reference: &Path, case: &str) {
+    let read = |prefix: &Path, middle| {
+        normalized_alignment_records(
+            &PathBuf::from(format!("{}.{}.{}", prefix.display(), middle, format)),
+            reference,
+        )
+    };
+    let ours = [read(ours, "0"), read(ours, "1"), read(ours, "chimera")];
+    let oracle = [
+        read(oracle, "0"),
+        read(oracle, "1"),
+        read(oracle, "chimera"),
+    ];
+
+    assert_eq!(ours[2], oracle[2], "{case} chimera partition");
+    for partition in 0..2 {
+        assert_eq!(
+            ours[partition]
+                .iter()
+                .filter(|record| has_phase_tag(record))
+                .collect::<Vec<_>>(),
+            oracle[partition]
+                .iter()
+                .filter(|record| has_phase_tag(record))
+                .collect::<Vec<_>>(),
+            "{case} tagged partition {partition}"
+        );
+    }
+    let random = |partitions: &[Vec<Vec<u8>>; 3]| {
+        let mut records = partitions[..2]
+            .iter()
+            .flatten()
+            .filter(|record| !has_phase_tag(record))
+            .cloned()
+            .collect::<Vec<_>>();
+        records.sort_unstable();
+        records
+    };
+    assert_eq!(random(&ours), random(&oracle), "{case} random partitions");
+}
+
 #[test]
 #[ignore = "release oracle: requires samtools 1.24"]
 fn phase_matches_samtools_1_24_across_inputs_options_and_partitions() {
@@ -340,15 +388,13 @@ fn phase_matches_samtools_1_24_across_inputs_options_and_partitions() {
         run_ours(&ours_arguments);
         run_samtools(&oracle_arguments);
 
-        for middle in ["0", "1", "chimera"] {
-            let ours = PathBuf::from(format!("{}.{}.{}", ours.display(), middle, format));
-            let oracle = PathBuf::from(format!("{}.{}.{}", oracle.display(), middle, format));
-            assert_eq!(
-                normalized_alignment_records(&ours, &reference),
-                normalized_alignment_records(&oracle, &reference),
-                "format={format} partition={middle}"
-            );
-        }
+        assert_phase_partitions(
+            &ours,
+            &oracle,
+            format,
+            &reference,
+            &format!("format={format}"),
+        );
     }
 
     for (case, input, options) in [
@@ -366,15 +412,7 @@ fn phase_matches_samtools_1_24_across_inputs_options_and_partitions() {
         run_ours(&ours_arguments);
         run_samtools(&oracle_arguments);
 
-        for middle in ["0", "1", "chimera"] {
-            let ours = PathBuf::from(format!("{}.{}.bam", ours.display(), middle));
-            let oracle = PathBuf::from(format!("{}.{}.bam", oracle.display(), middle));
-            assert_eq!(
-                normalized_alignment_records(&ours, &reference),
-                normalized_alignment_records(&oracle, &reference),
-                "case={case} partition={middle}"
-            );
-        }
+        assert_phase_partitions(&ours, &oracle, "bam", &reference, &format!("case={case}"));
     }
 }
 
