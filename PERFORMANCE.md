@@ -1162,7 +1162,71 @@ values `136a8d3deca43fc072748b537f60df981eeb4d6bab0d10f58f5c2fb466f2b8cf`,
 `9728232c1eefd6a96bc7dbb7430c616e17e00e71e1b9829c2ff81e29fa099494`,
 and `481fb6fe8f02e462a701a9f022fb1c35c239172a546b3301ae44e33bf250287d`.
 
+## Phase benchmark
+
+The 2026-08-11 phase gate used feature revision
+`5cb994af1991be60dd6fc515c9305f465af2a959`, Rust 1.91.0, and
+samtools/HTSlib 1.24 on an Apple M2 Mac mini with 8 GiB of memory and macOS
+26.6.1. A complete correctness pass preceded 12 paired rounds, with command
+order alternating every round. `/usr/bin/time -p -l` supplied wall, user,
+system, and maximum-resident-set measurements.
+
+```text
+rsomics-bam phase input.bam > /dev/null
+samtools phase input.bam > /dev/null
+```
+
+| Tool | Mean wall | Median wall | Wall standard deviation | Mean user | Mean system | Mean peak RSS |
+|---|---:|---:|---:|---:|---:|---:|
+| `rsomics-bam phase` | 2.475833 s | 2.455000 s | 0.081068 s | 2.285833 s | 0.045000 s | 40,005,632 bytes |
+| `samtools phase` | 11.604167 s | 11.600000 s | 0.075973 s | 11.011667 s | 0.240833 s | 40,946,347 bytes |
+
+`rsomics-bam phase` won all 12 pairs. It was 4.725 times as fast by median
+wall time and reduced mean wall, user, system, and peak-RSS measurements by
+78.66%, 79.24%, 81.31%, and 2.30%, respectively. The paired mean
+samtools-minus-rsomics wall-time difference was 9.128333 seconds with a
+0.103996-second sample standard deviation and a paired t-statistic of 304.065.
+This establishes a strict throughput advantage on the declared read-backed
+phasing workload. The smaller observed RSS is reported for this fixture and is
+not treated as a general memory claim.
+
+The fixture contains 50,000 independent phase sets, 100,000 heterozygous
+markers, and 600,000 records in 1,901,460 bytes. Its SHA-256 is
+`079215c2e83248a5294abbe569f2876a9c4d877b19ecfd3ebd90af9519d47f81`.
+Both complete reports contain the same phase-set and marker counts and have
+the same SHA-256 fingerprint after sorting `EV` rows within each phase set:
+`afd086da418056978a585b1242f89e8b9b14f3911644b1b85a7b0a2676ca8585`.
+The normalization removes only upstream hash-table iteration order.
+
+The measured rsomics and samtools binaries have SHA-256 values
+`986e32989e5f7ea14f38ee73d23432ccc07f1f589b50ff9c5d1e49bd69c731cb`
+and `c265b440b09c4b21d1f25a65963cf907b0d9f9d18caa9382c31104158f89d027`.
+The environment record, timing ledger, generated summary, and each report
+fingerprint have SHA-256 values
+`c7db74fca7e9c72ed906b0d54474b2d8efba175085447ff42e7a5a3749b607c5`,
+`711fce40d0539fb400b786e22eea57ef2fffb4820642a9eea6b45accbdbf8eae`,
+`eedb99ac45caa5d21b41267718162555e7ef91397bc6268cdd5b0b57fbed34e6`,
+and `56ff67954af184067c2a8023c89f746777df4c08cffab3e2b116911856f3e26b`.
+The artifact manifest has SHA-256
+`9504c4081a1277112a0f91feecd1332a8eb094cb753ed9e925861548a478161a`.
+
 ## Reproduction
+
+`benchmarks/generate-phase-fixture.py` emits the independent two-marker phase
+sets used by the phase gate. `benchmarks/phase-vs-samtools-macos.sh` validates
+both complete report fingerprints, rejects an existing result directory,
+alternates timed command order, and records environment and artifact
+provenance:
+
+```sh
+benchmarks/generate-phase-fixture.py 50000 | \
+  samtools view -b -o /path/to/input.bam -
+
+RSOMICS_COMMIT=5cb994af1991be60dd6fc515c9305f465af2a959 \
+  benchmarks/phase-vs-samtools-macos.sh \
+  target/release/rsomics-bam /path/to/samtools /path/to/input.bam \
+  /path/to/results 12 phase
+```
 
 `benchmarks/consensus-vs-samtools-macos.sh` compares default Bayesian FASTA
 output byte-for-byte after every pair, alternates command order, and records
