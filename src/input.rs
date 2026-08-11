@@ -3,6 +3,7 @@ use std::io::{self, BufRead, BufReader, Cursor, Read};
 use std::num::NonZero;
 use std::path::Path;
 
+use flate2::read::MultiGzDecoder;
 use noodles::{bam, bgzf, core::Region, cram, fasta, sam};
 use noodles_util::alignment;
 use rsomics_bamio::raw::{self, RawRecord, RawRecordEncoder, RecordReader, RecordRef};
@@ -20,12 +21,14 @@ pub(crate) enum Format {
 enum Compression {
     None,
     Bgzf,
+    Gzip,
 }
 
 enum Inner {
     General(alignment::io::Reader<Box<dyn Read>>),
     Sam(sam::io::Reader<BufReader<File>>),
     SamGz(sam::io::Reader<bgzf::io::Reader<BufReader<File>>>),
+    SamGzip(Box<sam::io::Reader<BufReader<MultiGzDecoder<BufReader<File>>>>>),
     Bam(ParallelBamReader),
     BamRaw(bam::io::Reader<BufReader<File>>),
     Cram(cram::io::Reader<BufReader<File>>),
@@ -47,11 +50,16 @@ impl Reader {
         self.format
     }
 
+    pub(crate) fn has_reusable_raw_bam_path(&self) -> bool {
+        matches!(self.inner, Inner::Bam(_) | Inner::BamRaw(_))
+    }
+
     pub(crate) fn read_header(&mut self, input: &Path) -> Result<sam::Header> {
         let result = match &mut self.inner {
             Inner::General(reader) => reader.read_header(),
             Inner::Sam(reader) => reader.read_header(),
             Inner::SamGz(reader) => reader.read_header(),
+            Inner::SamGzip(reader) => reader.read_header(),
             Inner::Bam(reader) => reader.read_header(),
             Inner::BamRaw(reader) => reader.read_header(),
             Inner::Cram(reader) => reader.read_header(),
@@ -90,6 +98,14 @@ impl Reader {
                 }
             }
             Inner::SamGz(reader) => {
+                for result in reader.records() {
+                    let record = result.map_err(|error| record_error(input, error))?;
+                    if !visit(&record)? {
+                        break;
+                    }
+                }
+            }
+            Inner::SamGzip(reader) => {
                 for result in reader.records() {
                     let record = result.map_err(|error| record_error(input, error))?;
                     if !visit(&record)? {
@@ -301,14 +317,29 @@ pub(crate) fn open(
         }
         let mut stdin = io::stdin();
         let mut prefix = Vec::new();
-        let format = detect_stream(&mut stdin, &mut prefix)?;
+        let (mut format, compression) = detect_stream(&mut stdin, &mut prefix)?;
         let source = Cursor::new(prefix).chain(stdin);
+        let source: Box<dyn Read> = if compression == Compression::Gzip {
+            let mut decoder = MultiGzDecoder::new(BufReader::new(source));
+            let mut magic = [0; 4];
+            decoder
+                .read_exact(&mut magic)
+                .map_err(|error| open_error(input, error))?;
+            format = match magic {
+                value if value == *b"CRAM" => Format::Cram,
+                value if value == *b"BAM\x01" => Format::Bam,
+                _ => Format::Sam,
+            };
+            Box::new(Cursor::new(magic).chain(decoder))
+        } else {
+            Box::new(source)
+        };
         let mut builder = alignment::io::reader::Builder::default();
         if let Some(reference) = reference {
             builder = builder.set_reference_sequence_repository(reference_repository(reference)?);
         }
         let inner = builder
-            .build_from_reader(Box::new(source) as Box<dyn Read>)
+            .build_from_reader(source)
             .map_err(|error| open_error(input, error))?;
         return Ok(Reader {
             inner: Inner::General(inner),
@@ -329,6 +360,9 @@ pub(crate) fn open(
         (Format::Sam, Compression::Bgzf) => Inner::SamGz(sam::io::Reader::new(
             bgzf::io::Reader::new(BufReader::new(file)),
         )),
+        (Format::Sam, Compression::Gzip) => Inner::SamGzip(Box::new(sam::io::Reader::new(
+            BufReader::new(MultiGzDecoder::new(BufReader::new(file))),
+        ))),
         (Format::Bam, Compression::Bgzf) => {
             let inner: Box<dyn BufRead + Send> =
                 if let Some(workers) = NonZero::new(additional_threads) {
@@ -346,6 +380,12 @@ pub(crate) fn open(
         (Format::Bam, Compression::None) => {
             Inner::BamRaw(bam::io::Reader::from(BufReader::new(file)))
         }
+        (Format::Bam, Compression::Gzip) => {
+            return Err(RsomicsError::InvalidInput(format!(
+                "BAM input must use BGZF compression: {}",
+                input.display()
+            )));
+        }
         (Format::Cram, Compression::None) => {
             let mut builder = cram::io::reader::Builder::default();
             if let Some(reference) = reference {
@@ -357,6 +397,12 @@ pub(crate) fn open(
         (Format::Cram, Compression::Bgzf) => {
             return Err(RsomicsError::InvalidInput(format!(
                 "CRAM input cannot be BGZF-compressed: {}",
+                input.display()
+            )));
+        }
+        (Format::Cram, Compression::Gzip) => {
+            return Err(RsomicsError::InvalidInput(format!(
+                "CRAM input cannot be gzip-compressed: {}",
                 input.display()
             )));
         }
@@ -447,23 +493,38 @@ fn detect_source(input: &Path) -> Result<(Format, Compression)> {
 
     let file = File::open(input).map_err(|error| open_error(input, error))?;
     let mut reader = bgzf::io::Reader::new(file);
+    if reader.read_exact(&mut magic).is_ok() {
+        return Ok((
+            if magic == *b"BAM\x01" {
+                Format::Bam
+            } else {
+                Format::Sam
+            },
+            Compression::Bgzf,
+        ));
+    }
+
+    let file = File::open(input).map_err(|error| open_error(input, error))?;
+    let mut reader = MultiGzDecoder::new(BufReader::new(file));
     reader.read_exact(&mut magic).map_err(|error| {
         RsomicsError::InvalidInput(format!(
-            "detecting BGZF alignment format for {}: {error}",
+            "detecting gzip alignment format for {}: {error}",
             input.display()
         ))
     })?;
     Ok((
         if magic == *b"BAM\x01" {
             Format::Bam
+        } else if magic == *b"CRAM" {
+            Format::Cram
         } else {
             Format::Sam
         },
-        Compression::Bgzf,
+        Compression::Gzip,
     ))
 }
 
-fn detect_stream(source: &mut impl Read, prefix: &mut Vec<u8>) -> Result<Format> {
+fn detect_stream(source: &mut impl Read, prefix: &mut Vec<u8>) -> Result<(Format, Compression)> {
     let mut magic = [0; 4];
     source
         .read_exact(&mut magic)
@@ -471,13 +532,13 @@ fn detect_stream(source: &mut impl Read, prefix: &mut Vec<u8>) -> Result<Format>
     prefix.extend_from_slice(&magic);
 
     if magic == *b"CRAM" {
-        return Ok(Format::Cram);
+        return Ok((Format::Cram, Compression::None));
     }
     if magic == *b"BAM\x01" {
-        return Ok(Format::Bam);
+        return Ok((Format::Bam, Compression::None));
     }
     if magic[..2] != [0x1f, 0x8b] {
-        return Ok(Format::Sam);
+        return Ok((Format::Sam, Compression::None));
     }
 
     let mut gzip_header = [0; 8];
@@ -486,9 +547,7 @@ fn detect_stream(source: &mut impl Read, prefix: &mut Vec<u8>) -> Result<Format>
         .map_err(|error| open_error(Path::new("-"), error))?;
     prefix.extend_from_slice(&gzip_header);
     if prefix[3] & 0x04 == 0 {
-        return Err(RsomicsError::InvalidInput(
-            "gzip-compressed alignment input is not BGZF".to_owned(),
-        ));
+        return Ok((Format::Sam, Compression::Gzip));
     }
 
     let extra_length = usize::from(u16::from_le_bytes([prefix[10], prefix[11]]));
@@ -516,9 +575,9 @@ fn detect_stream(source: &mut impl Read, prefix: &mut Vec<u8>) -> Result<Format>
         }
         offset = end;
     }
-    let block_size = block_size.ok_or_else(|| {
-        RsomicsError::InvalidInput("missing BGZF block size on standard input".to_owned())
-    })?;
+    let Some(block_size) = block_size else {
+        return Ok((Format::Sam, Compression::Gzip));
+    };
     let remaining = block_size.checked_sub(prefix.len()).ok_or_else(|| {
         RsomicsError::InvalidInput("invalid BGZF block size on standard input".to_owned())
     })?;
@@ -534,11 +593,14 @@ fn detect_stream(source: &mut impl Read, prefix: &mut Vec<u8>) -> Result<Format>
             "detecting BGZF alignment format on standard input: {error}"
         ))
     })?;
-    Ok(if magic == *b"BAM\x01" {
-        Format::Bam
-    } else {
-        Format::Sam
-    })
+    Ok((
+        if magic == *b"BAM\x01" {
+            Format::Bam
+        } else {
+            Format::Sam
+        },
+        Compression::Bgzf,
+    ))
 }
 
 fn reference_repository(path: &Path) -> Result<fasta::Repository> {

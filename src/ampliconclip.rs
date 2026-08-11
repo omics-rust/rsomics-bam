@@ -462,15 +462,9 @@ fn cigar_text(record: &RawRecord) -> Result<String> {
 }
 
 fn integer_aux(record: &RawRecord, tag: [u8; 2]) -> Option<i64> {
-    let value = record.aux_value(tag)?;
-    match record.aux_type(tag)? {
-        b'c' => Some(i64::from(i8::from_le_bytes(value.try_into().ok()?))),
-        b'C' => Some(i64::from(u8::from_le_bytes(value.try_into().ok()?))),
-        b's' => Some(i64::from(i16::from_le_bytes(value.try_into().ok()?))),
-        b'S' => Some(i64::from(u16::from_le_bytes(value.try_into().ok()?))),
-        b'i' => Some(i64::from(i32::from_le_bytes(value.try_into().ok()?))),
-        b'I' => Some(i64::from(u32::from_le_bytes(value.try_into().ok()?))),
-        _ => None,
+    match crate::raw_aux::integer(record, tag) {
+        crate::raw_aux::Integer::Value(value) => Some(value),
+        crate::raw_aux::Integer::Missing | crate::raw_aux::Integer::Invalid => None,
     }
 }
 

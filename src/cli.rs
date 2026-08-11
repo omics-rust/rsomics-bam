@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::{
     addreplacerg, ampliconclip, ampliconstats, bedcov, calmd, cat, collate, commands, coverage,
     depad, depth, fixmate, flags, flagstat, head, idxstats, index, markdup, merge, mpileup,
-    quickcheck, reheader, reset, samples, sort, stats, view,
+    quickcheck, reheader, reset, samples, sort, stats, to_bed, view,
 };
 
 const META: ToolMeta = ToolMeta {
@@ -92,6 +92,8 @@ enum Command {
     Sort(commands::sort::Arguments),
     /// Produce comprehensive alignment statistics
     Stats(Box<commands::stats::Arguments>),
+    /// Convert alignments to BED intervals
+    ToBed(commands::to_bed::Arguments),
     /// Filter and convert alignment records
     View(Box<commands::view::Arguments>),
 }
@@ -189,6 +191,9 @@ pub(crate) enum CommandOutput {
     Stats {
         report: Box<stats::Report>,
     },
+    ToBed {
+        summary: to_bed::Summary,
+    },
     View {
         summary: view::Summary,
     },
@@ -239,6 +244,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Samples(arguments) => commands::samples::execute(arguments, cli.output.json),
         Command::Sort(arguments) => commands::sort::execute(arguments, cli.output.json),
         Command::Stats(arguments) => commands::stats::execute(*arguments, cli.output.json),
+        Command::ToBed(arguments) => commands::to_bed::execute(arguments, cli.output.json),
         Command::View(arguments) => commands::view::execute(*arguments, cli.output.json),
     }
 }
@@ -598,5 +604,31 @@ mod tests {
         for excluded in ["--i1", "--CASAVA", "--UMI", "--name2", "--barcode-tag"] {
             assert!(!help.contains(excluded), "unexpected {excluded} in {help}");
         }
+    }
+
+    #[test]
+    fn to_bed_help_exposes_the_complete_conversion_surface() {
+        let help = rsomics_help::try_parse_from::<Cli, _, _>(["rsomics-bam", "to-bed", "--help"])
+            .unwrap_err()
+            .to_string();
+        for option in [
+            "--bedpe",
+            "--mate1",
+            "--ed",
+            "--tag",
+            "--cigar",
+            "--bed12",
+            "--split",
+            "--split-d",
+            "--color",
+            "-T, --reference",
+            "-@, --threads",
+            "-o, --output",
+            "-i, --input",
+        ] {
+            assert!(help.contains(option), "missing {option} in {help}");
+        }
+        assert!(help.contains("Input SAM, BAM, or CRAM"), "{help}");
+        assert!(help.contains("Global options:"), "{help}");
     }
 }

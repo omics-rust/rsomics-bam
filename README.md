@@ -4,7 +4,7 @@
 inspection, filtering, conversion, validation, collation, mate repair, sorting,
 compressed file editing, read-group editing, duplicate marking, FASTQ import,
 padded-reference projection, alignment reset, amplicon sequencing, pileup, and
-content-checksum workflows.
+content-checksum and alignment-to-interval workflows.
 
 ## Install
 
@@ -46,6 +46,7 @@ cargo install rsomics-bam
 | `samples` | List samples and other read-group metadata |
 | `sort` | Sort alignments with bounded memory and external runs |
 | `stats` | Produce comprehensive alignment statistics |
+| `to-bed` | Convert alignments to BED6, BED12, or BEDPE |
 | `view` | Filter records and convert to SAM or BAM |
 
 ```sh
@@ -75,6 +76,7 @@ rsomics-bam reheader replacement.sam input.bam -o reheadered.bam
 rsomics-bam reset --keep-tag RG,BC aligned.bam -o unmapped.bam
 rsomics-bam sort -m 768M -o sorted.bam input.bam
 rsomics-bam stats -r reference.fa -o sample.bamstat sample.bam
+rsomics-bam to-bed --split-d -o blocks.bed alignments.bam
 ```
 
 The commands accept SAM, BAM, and CRAM where their help declares those input
@@ -194,6 +196,12 @@ samtools default alignment tags, and supports explicit remove, keep, read-group,
 program-chain, and duplicate-flag policies. Named output is transactional;
 CRAM is fully decoded before commit. HTSlib input and output format-option
 strings are not exposed.
+`to-bed` accepts SAM, BAM, CRAM, ordinary gzip-compressed SAM, and standard
+input. It emits BED6 by default, split BED6 at CIGAR `N` or `D` boundaries,
+blocked BED12, or BEDPE from adjacent name-grouped pairs. Scores come from
+MAPQ, `NM`, or another integer tag; CIGAR text can be appended to unsplit
+BED6. Named outputs are transactional, reference-backed CRAM uses `-T`, and
+machine summaries stay separate through the shared JSON envelope.
 
 Stable behavior is tested against samtools 1.24 across SAM, BAM, and CRAM.
 Coverage summaries, BED coverage totals, custom indexes, filtering, depth

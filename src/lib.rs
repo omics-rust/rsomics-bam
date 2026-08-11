@@ -53,6 +53,7 @@ pub mod mpileup;
 mod program;
 /// Alignment integrity checks.
 pub mod quickcheck;
+mod raw_aux;
 /// Compressed-block BAM header replacement.
 pub mod reheader;
 /// Alignment reset to unaligned reads.
@@ -63,6 +64,8 @@ pub mod samples;
 pub mod sort;
 /// Comprehensive alignment statistics.
 pub mod stats;
+/// Alignment conversion to BED intervals.
+pub mod to_bed;
 /// Alignment filtering and format conversion.
 pub mod view;
 

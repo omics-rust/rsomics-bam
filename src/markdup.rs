@@ -466,23 +466,9 @@ fn score(record: &RawRecord) -> i64 {
 }
 
 fn mate_score(record: &RawRecord) -> Result<i64> {
-    let value = record.aux_value(*b"ms").ok_or_else(missing_mate_score)?;
-    match record.aux_type(*b"ms") {
-        Some(b'c') => value.first().map(|&value| i64::from(value as i8)),
-        Some(b'C') => value.first().map(|&value| i64::from(value)),
-        Some(b's') => value
-            .get(..2)
-            .map(|value| i64::from(i16::from_le_bytes([value[0], value[1]]))),
-        Some(b'S') => value
-            .get(..2)
-            .map(|value| i64::from(u16::from_le_bytes([value[0], value[1]]))),
-        Some(b'i') => value
-            .get(..4)
-            .map(|value| i64::from(i32::from_le_bytes([value[0], value[1], value[2], value[3]]))),
-        Some(b'I') => value
-            .get(..4)
-            .map(|value| i64::from(u32::from_le_bytes([value[0], value[1], value[2], value[3]]))),
-        _ => None,
+    match crate::raw_aux::integer(record, *b"ms") {
+        crate::raw_aux::Integer::Value(value) => Some(value),
+        crate::raw_aux::Integer::Missing | crate::raw_aux::Integer::Invalid => None,
     }
     .ok_or_else(missing_mate_score)
 }

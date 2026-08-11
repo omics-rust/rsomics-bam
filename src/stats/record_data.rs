@@ -284,17 +284,10 @@ fn raw_string_into(
 }
 
 fn raw_integer(source: &RecordRef<'_>, tag: [u8; 2]) -> Result<Option<u64>> {
-    let Some(value) = source.aux_value(tag) else {
-        return Ok(None);
-    };
-    let signed = match source.aux_type(tag) {
-        Some(b'c') if value.len() == 1 => i64::from(value[0] as i8),
-        Some(b'C') if value.len() == 1 => i64::from(value[0]),
-        Some(b's') if value.len() == 2 => i64::from(i16::from_le_bytes(value.try_into().unwrap())),
-        Some(b'S') if value.len() == 2 => i64::from(u16::from_le_bytes(value.try_into().unwrap())),
-        Some(b'i') if value.len() == 4 => i64::from(i32::from_le_bytes(value.try_into().unwrap())),
-        Some(b'I') if value.len() == 4 => i64::from(u32::from_le_bytes(value.try_into().unwrap())),
-        _ => {
+    let signed = match crate::raw_aux::integer(source, tag) {
+        crate::raw_aux::Integer::Missing => return Ok(None),
+        crate::raw_aux::Integer::Value(value) => value,
+        crate::raw_aux::Integer::Invalid => {
             return Err(RsomicsError::InvalidInput(
                 "NM auxiliary tag is not an integer".to_owned(),
             ));
