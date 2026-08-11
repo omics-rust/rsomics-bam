@@ -48,6 +48,8 @@ enum Command {
     Checksum(commands::checksum::Arguments),
     /// Group alignments by read name with bounded memory
     Collate(commands::collate::Arguments),
+    /// Call a consensus sequence from coordinate-sorted alignments
+    Consensus(commands::consensus::Arguments),
     /// Summarize coverage by reference sequence
     Coverage(commands::coverage::Arguments),
     /// Report CRAM data-series storage by block
@@ -124,6 +126,9 @@ pub(crate) enum CommandOutput {
     },
     Collate {
         summary: collate::Summary,
+    },
+    Consensus {
+        summary: crate::consensus::Summary,
     },
     Coverage {
         report: coverage::Report,
@@ -222,6 +227,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Cat(arguments) => commands::cat::execute(arguments, cli.output.json),
         Command::Checksum(arguments) => commands::checksum::execute(arguments, cli.output.json),
         Command::Collate(arguments) => commands::collate::execute(arguments, cli.output.json),
+        Command::Consensus(arguments) => commands::consensus::execute(arguments, cli.output.json),
         Command::Coverage(arguments) => commands::coverage::execute(arguments, cli.output.json),
         Command::CramSize(arguments) => commands::cram_size::execute(arguments, cli.output.json),
         Command::Depth(arguments) => commands::depth::execute(arguments, cli.output.json),
@@ -258,6 +264,104 @@ mod tests {
     #[test]
     fn command_tree_is_valid() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn consensus_help_exposes_complete_stable_surface() {
+        let help =
+            rsomics_help::try_parse_from::<Cli, _, _>(["rsomics-bam", "consensus", "--help"])
+                .unwrap_err()
+                .to_string();
+        for option in [
+            "-m, --mode",
+            "--regions-file",
+            "-f, --format",
+            "--show-del",
+            "--show-ins",
+            "--mark-ins",
+            "--min-MQ",
+            "--min-BQ",
+            "-c, --call-fract",
+            "-C, --cutoff",
+            "--no-adj-qual",
+            "--no-use-MQ",
+            "--no-adj-MQ",
+            "--NM-halo",
+            "--scale-MQ",
+            "--low-MQ",
+            "--high-MQ",
+            "--P-het",
+            "--P-indel",
+            "--het-scale",
+            "-t, --qual-calibration",
+            "-X, --config",
+            "-T, --reference",
+            "-@, --threads",
+        ] {
+            assert!(help.contains(option), "missing {option} in {help}");
+        }
+        for excluded in ["--het-only", "--homopoly-redux", "--block-size"] {
+            assert!(!help.contains(excluded), "unexpected {excluded} in {help}");
+        }
+    }
+
+    #[test]
+    fn consensus_boolean_options_require_yes_or_no_values() {
+        assert!(
+            rsomics_help::try_parse_from::<Cli, _, _>([
+                "rsomics-bam",
+                "consensus",
+                "--show-del",
+                "yes",
+                "--show-ins",
+                "no",
+            ])
+            .is_ok()
+        );
+        assert!(
+            rsomics_help::try_parse_from::<Cli, _, _>([
+                "rsomics-bam",
+                "consensus",
+                "--show-del",
+                "true",
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn consensus_command_writes_the_samtools_oracle_and_summary() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/upstream/samtools-consensus");
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("consensus.fastq");
+        let cli = rsomics_help::try_parse_from::<Cli, _, _>([
+            "rsomics-bam".into(),
+            "consensus".into(),
+            "--mode".into(),
+            "simple".into(),
+            "--call-fract".into(),
+            "0.6".into(),
+            "--format".into(),
+            "fastq".into(),
+            "--output".into(),
+            output.as_os_str().to_owned(),
+            root.join("consen1.sam").into_os_string(),
+        ])
+        .unwrap();
+
+        let result = execute(cli).unwrap();
+
+        let CommandOutput::Consensus { summary } = result else {
+            panic!("unexpected command output")
+        };
+        assert_eq!(summary.sequence_records, 1);
+        assert_eq!(summary.sequence_symbols, 16);
+        assert_eq!(summary.pileup_rows, 0);
+        assert_eq!(
+            std::fs::read(output).unwrap(),
+            std::fs::read(root.join("expected/1q.out")).unwrap()
+        );
     }
 
     #[test]

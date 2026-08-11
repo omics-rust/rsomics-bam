@@ -6,6 +6,7 @@ pub(crate) mod calmd;
 pub(crate) mod cat;
 pub(crate) mod checksum;
 pub(crate) mod collate;
+pub(crate) mod consensus;
 pub(crate) mod coverage;
 pub(crate) mod cram_size;
 pub(crate) mod depad;

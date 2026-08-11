@@ -3,8 +3,8 @@
 `rsomics-bam` is a single command-line product for SAM, BAM, and CRAM
 inspection, filtering, conversion, validation, collation, mate repair, sorting,
 compressed file editing, read-group editing, duplicate marking, FASTQ import,
-padded-reference projection, alignment reset, amplicon sequencing, pileup, and
-content-checksum and alignment-to-interval workflows.
+padded-reference projection, alignment reset, amplicon sequencing, consensus
+calling, pileup, and content-checksum and alignment-to-interval workflows.
 
 ## Install
 
@@ -24,6 +24,7 @@ cargo install rsomics-bam
 | `cat` | Concatenate BAM files without reencoding alignment blocks |
 | `checksum` | Compute content checksums or merge prior reports |
 | `collate` | Group all alignments for each read name with bounded memory |
+| `consensus` | Call FASTA, FASTQ, or pileup consensus from sorted alignments |
 | `coverage` | Summarize reads, breadth, depth, and quality by reference |
 | `cram-size` | Report CRAM storage by content ID, codec, and data series |
 | `depad` | Project padded-reference alignments into unpadded coordinates |
@@ -60,6 +61,7 @@ rsomics-bam calmd -b -o recalculated.bam input.bam reference.fa
 rsomics-bam cat lane1.bam lane2.bam -o combined.bam
 rsomics-bam checksum -a -o sample.chk input.bam
 rsomics-bam collate -m 128M -o grouped.bam input.bam
+rsomics-bam consensus -X hifi -T reference.fa -o consensus.fastq -f fastq input.bam
 rsomics-bam coverage -q 20 -Q 20 sample.bam
 rsomics-bam cram-size -e sample.cram
 rsomics-bam depad -T padded.fa -@ 4 -o unpadded.bam padded.bam
@@ -105,6 +107,13 @@ exposed.
 groups. Its total record-memory budget and external merge fan-in are bounded;
 the order between groups is intentionally unspecified. Fast-mode filtering and
 early-pair buffering are not yet exposed.
+`consensus` consumes coordinate-sorted SAM, BAM, or reference-backed CRAM and
+writes FASTA, FASTQ, or per-column pileup. It provides simple and Gap5-style
+Bayesian models, samtools 1.16 compatibility, sequencing-platform profiles,
+quality calibration, insertion and deletion controls, indexed regions, BED
+regions, and uncovered-reference filling. Named output is transactional and
+the shared JSON envelope requires a separate named sequence output. Additional
+threads decompress alignment input; block-parallel calling is not yet exposed.
 `ampliconclip` consumes coordinate-ordered BAM and a three- or six-column
 primer BED, then writes clipped BAM plus optional statistics, rejects, and
 per-primer counts. `ampliconstats` consumes coordinate-ordered clipped BAM and
@@ -219,3 +228,6 @@ processing. See [PERFORMANCE.md](PERFORMANCE.md) for the representative BAM
 throughput, memory, and decoded-output gate.
 
 License: MIT OR Apache-2.0.
+
+Third-party notices are listed in
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

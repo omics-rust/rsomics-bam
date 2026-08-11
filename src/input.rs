@@ -251,6 +251,19 @@ impl Reader {
         }
         Ok(())
     }
+
+    pub(crate) fn visit_owned_raw_region(
+        &mut self,
+        header: &sam::Header,
+        input: &Path,
+        region: &Region,
+        mut visit: impl FnMut(RawRecord) -> Result<bool>,
+    ) -> Result<()> {
+        let mut encoder = RawRecordEncoder::new();
+        self.visit_region(header, input, Some(region), |record| {
+            visit(encoder.encode(header, record)?)
+        })
+    }
 }
 
 fn visit_raw_records(
@@ -603,7 +616,7 @@ fn detect_stream(source: &mut impl Read, prefix: &mut Vec<u8>) -> Result<(Format
     ))
 }
 
-fn reference_repository(path: &Path) -> Result<fasta::Repository> {
+pub(crate) fn reference_repository(path: &Path) -> Result<fasta::Repository> {
     fasta::io::indexed_reader::Builder::default()
         .build_from_path(path)
         .map(fasta::repository::adapters::IndexedReader::new)

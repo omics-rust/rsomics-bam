@@ -77,6 +77,7 @@ mod amplicon;
 mod bgzf_rewrite;
 mod cli;
 mod commands;
+mod consensus;
 mod filter;
 mod header_merge;
 mod header_source;
