@@ -195,20 +195,10 @@ fn input_output_alias_is_rejected_without_replacing_the_input() {
 
 #[test]
 fn malformed_auxiliary_tag_list_is_rejected() {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_rsomics-bam"))
+    let output = Command::new(env!("CARGO_BIN_EXE_rsomics-bam"))
         .args(["reset", "--no-PG", "-x", "BC,,RG", "-"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .output()
         .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(INPUT.as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
 
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
