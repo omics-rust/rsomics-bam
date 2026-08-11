@@ -13,6 +13,11 @@ mod output;
 mod parts;
 mod tag;
 
+const PAIRED: u16 = 0x01;
+const UNMAPPED: u16 = 0x04;
+const MATE_UNMAPPED: u16 = 0x08;
+const QCFAIL: u16 = 0x200;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Format {
     Sam,
@@ -284,13 +289,14 @@ fn run_genes(
     if format == Format::Bam {
         reader.visit_owned_raw_records(header, input_path, |record| {
             records = increment(records)?;
-            let destination = if record.flags() & (0x04 | 0x200) != 0 {
-                2
-            } else if exons.contains(record.reference_sequence_id(), record.alignment_start())? {
-                0
-            } else {
-                1
-            };
+            let destination = gene_destination(
+                exons,
+                record.flags(),
+                record.reference_sequence_id(),
+                record.alignment_start(),
+                record.mate_reference_sequence_id(),
+                record.mate_alignment_start(),
+            )?;
             router.write_raw_to(destination, &record)?;
             Ok(true)
         })?;
@@ -299,36 +305,80 @@ fn run_genes(
             let record = sam::alignment::RecordBuf::try_from_alignment_record(header, record)
                 .map_err(RsomicsError::Io)?;
             records = increment(records)?;
-            let destination = if u16::from(record.flags()) & (0x04 | 0x200) != 0 {
+            let flags = record.flags().bits();
+            let destination = if flags & (UNMAPPED | QCFAIL) != 0 {
                 2
             } else {
-                let reference = record.reference_sequence_id().ok_or_else(|| {
-                    RsomicsError::InvalidInput(
-                        "mapped gene split record has no reference".to_owned(),
-                    )
-                })?;
-                let position = record.alignment_start().ok_or_else(|| {
-                    RsomicsError::InvalidInput(
-                        "mapped gene split record has no alignment start".to_owned(),
-                    )
-                })?;
-                let reference = i32::try_from(reference).map_err(|_| {
-                    RsomicsError::InvalidInput("gene split record reference exceeds i32".to_owned())
-                })?;
-                let position = i32::try_from(usize::from(position) - 1).map_err(|_| {
-                    RsomicsError::InvalidInput("gene split record position exceeds i32".to_owned())
-                })?;
-                if exons.contains(reference, position)? {
-                    0
-                } else {
-                    1
-                }
+                let (reference, position) = decoded_point(
+                    record.reference_sequence_id(),
+                    record.alignment_start().map(usize::from),
+                    "record",
+                )?;
+                let (mate_reference, mate_position) =
+                    if flags & PAIRED != 0 && flags & MATE_UNMAPPED == 0 {
+                        decoded_point(
+                            record.mate_reference_sequence_id(),
+                            record.mate_alignment_start().map(usize::from),
+                            "mate",
+                        )?
+                    } else {
+                        (-1, -1)
+                    };
+                gene_destination(
+                    exons,
+                    flags,
+                    reference,
+                    position,
+                    mate_reference,
+                    mate_position,
+                )?
             };
             router.write_record_to(destination, &record)?;
             Ok(true)
         })?;
     }
     Ok((records, 0))
+}
+
+fn gene_destination(
+    exons: &bed::ExonIndex,
+    flags: u16,
+    reference: i32,
+    position: i32,
+    mate_reference: i32,
+    mate_position: i32,
+) -> Result<usize> {
+    if flags & (UNMAPPED | QCFAIL) != 0 {
+        return Ok(2);
+    }
+    let current = exons.contains(reference, position)?;
+    let mate = if flags & PAIRED != 0 && flags & MATE_UNMAPPED == 0 {
+        exons.contains(mate_reference, mate_position)?
+    } else {
+        false
+    };
+    Ok(usize::from(!(current || mate)))
+}
+
+fn decoded_point(
+    reference: Option<usize>,
+    position: Option<usize>,
+    role: &str,
+) -> Result<(i32, i32)> {
+    let reference = reference.ok_or_else(|| {
+        RsomicsError::InvalidInput(format!("mapped gene split {role} has no reference"))
+    })?;
+    let position = position.ok_or_else(|| {
+        RsomicsError::InvalidInput(format!("mapped gene split {role} has no alignment start"))
+    })?;
+    Ok((
+        i32::try_from(reference).map_err(|_| {
+            RsomicsError::InvalidInput(format!("gene split {role} reference exceeds i32"))
+        })?,
+        i32::try_from(position - 1).map_err(|_| {
+            RsomicsError::InvalidInput(format!("gene split {role} position exceeds i32"))
+        })?,
+    ))
 }
 
 fn run_mates(

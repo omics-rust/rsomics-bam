@@ -731,6 +731,8 @@ fn gene_mode_uses_leftmost_start_and_preserves_targets_on_bed_failure() {
         &[
             "overlap\t0\tchr1\t51\t60\t10M50N\t*\t0\t0\tAAAAAAAAAA\tFFFFFFFFFF",
             "inside\t0\tchr1\t101\t60\t10M\t*\t0\t0\tAAAAAAAAAA\tFFFFFFFFFF",
+            "pair\t99\tchr1\t151\t60\t10M\t=\t211\t70\tAAAAAAAAAA\tFFFFFFFFFF",
+            "pair\t147\tchr1\t211\t60\t10M\t=\t151\t-70\tAAAAAAAAAA\tFFFFFFFFFF",
             "qcfail\t512\tchr1\t101\t60\t10M\t*\t0\t0\tAAAAAAAAAA\tFFFFFFFFFF",
             "unmapped\t4\t*\t0\t0\t*\t*\t0\t0\t*\t*",
         ],
@@ -758,7 +760,7 @@ fn gene_mode_uses_leftmost_start_and_preserves_targets_on_bed_failure() {
     .unwrap();
     assert_eq!(
         body_names(&view_body(&directory.path().join("genes.in.sam"))),
-        [b"inside".to_vec()]
+        [b"inside".to_vec(), b"pair".to_vec(), b"pair".to_vec()]
     );
     assert_eq!(
         body_names(&view_body(&directory.path().join("genes.ex.sam"))),
