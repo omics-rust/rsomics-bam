@@ -44,7 +44,7 @@ cmp "$output/rsomics.report" "$output/samtools.report"
     printf 'rounds %s\n' "$rounds"
     printf 'input_bytes %s\n' "$(stat -f %z "$input")"
     printf 'input_records %s\n' "$("$oracle" view -c "$input")"
-    shasum -a 256 "$ours" "$oracle" "$input" "$output/rsomics.report" "$output/samtools.report"
+    shasum -a 256 "$ours" "$oracle" "$input" "$0" "$output/rsomics.report" "$output/samtools.report"
 } > "$environment"
 
 printf 'tool\tround\treal_seconds\tuser_seconds\tsystem_seconds\tmax_rss_bytes\n' > "$ledger"
@@ -80,7 +80,7 @@ done
 
 printf 'tool\tmean_wall_seconds\tmedian_wall_seconds\tmean_user_seconds\tmean_system_seconds\tmean_max_rss_bytes\tmedian_max_rss_bytes\n' > "$summary"
 for tool in rsomics samtools; do
-    means=$(awk -F '\t' -v tool="$tool" '$1 == tool { wall += $3; user += $4; system += $5; rss += $6; n += 1 } END { printf "%.6f\t%.6f\t%.6f\t%.0f", wall / n, user / n, system / n, rss / n }' "$ledger")
+    means=$(awk -F '\t' -v tool="$tool" '$1 == tool { wall += $3; user += $4; sys += $5; rss += $6; n += 1 } END { printf "%.6f\t%.6f\t%.6f\t%.0f", wall / n, user / n, sys / n, rss / n }' "$ledger")
     median_wall=$(awk -F '\t' -v tool="$tool" '$1 == tool { print $3 }' "$ledger" | sort -n | awk '{ value[NR] = $1 } END { if (NR % 2) print value[(NR + 1) / 2]; else printf "%.6f", (value[NR / 2] + value[NR / 2 + 1]) / 2 }')
     median_rss=$(awk -F '\t' -v tool="$tool" '$1 == tool { print $6 }' "$ledger" | sort -n | awk '{ value[NR] = $1 } END { if (NR % 2) print value[(NR + 1) / 2]; else printf "%.0f", (value[NR / 2] + value[NR / 2 + 1]) / 2 }')
     mean_wall=$(printf '%s\n' "$means" | cut -f1)
