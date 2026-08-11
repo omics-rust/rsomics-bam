@@ -756,10 +756,19 @@ chr1\t16\t20\tboundary\t60\t+\n"
 
 #[test]
 fn closed_standard_output_is_a_command_failure() {
-    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("many.sam");
+    let mut input = std::io::BufWriter::new(fs::File::create(&path).unwrap());
+    writeln!(input, "@HD\tVN:1.6").unwrap();
+    writeln!(input, "@SQ\tSN:chr1\tLN:1").unwrap();
+    for index in 0..100_000 {
+        writeln!(input, "q{index}\t0\tchr1\t1\t60\t1M\t*\t0\t0\tA\tI").unwrap();
+    }
+    drop(input);
+
     let mut child = binary()
         .arg("to-bed")
-        .arg(root.join("tests/golden/stats/1_map_cigar.sam"))
+        .arg(path)
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
