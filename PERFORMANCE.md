@@ -559,6 +559,54 @@ fixture and thread settings. They do not establish the same performance for
 SAM, CRAM, standard input, removal or clearing, sequence mode, or different
 duplicate distributions.
 
+## Consensus benchmark
+
+The 2026-08-11 consensus gate used feature revision
+`3f7fee2ad0566189d2886fdd1e0b52011625d9f9` and samtools/HTSlib 1.24 on an
+Apple M2 Mac mini with 8 GiB of memory and macOS 26.6.1. The 92,673,552-byte
+coordinate-sorted BAM contained 4,000,000 records over a 48,000,100-base
+reference and had SHA-256
+`bc2257da48b4c06da643edafbec1a383e946b7d1a0c0dd09dc21edc48dc2ef2d`.
+Both tools used the default Bayesian model, FASTA output, and no additional
+workers. Twenty timed pairs alternated command order after one warm-up.
+
+```text
+rsomics-bam consensus --threads 0 -o ours.fa input.coordinate.bam
+samtools consensus --threads 0 -o samtools.fa input.coordinate.bam
+```
+
+| Tool | Mean wall time | Median wall time | Mean CPU time | Mean peak RSS |
+|---|---:|---:|---:|---:|
+| `rsomics-bam consensus` | 16.2970 s | 16.2750 s | 14.9695 s | 57,496,371 bytes |
+| `samtools consensus` | 16.3230 s | 16.3150 s | 15.6015 s | 108,254,003 bytes |
+
+`rsomics-bam` won 11 of 20 pairs. The paired samtools-minus-rsomics wall-time
+difference was 0.0260 seconds, with sample standard deviation 0.2864 seconds
+and paired t-statistic 0.41. This establishes wall-time parity, not a
+throughput advantage. The Rust implementation used 46.89% less mean peak RSS
+and 4.05% less mean CPU time, establishing a strict resource-use advantage on
+this fixture.
+
+Every warm-up and timed pair produced byte-identical complete FASTA output
+with SHA-256
+`d5fab7764bf37f328206f227cd909b416cf8c4193611be47de10e1383f84ca05`.
+The measured product and samtools binaries had SHA-256 values
+`a008e06e34b6003d4af48f308f649085ebb673306debf20cde76c291e8208c6b`
+and `c265b440b09c4b21d1f25a65963cf907b0d9f9d18caa9382c31104158f89d027`.
+The environment, timing ledger, summary, and output-digest files had SHA-256
+values
+`55f037e2135bd1f2f44c98f5b5a5688736e365f7de821cd3ce84af00f1a59200`,
+`e5f4cefebb57cd71d47faf6d170813c0431ca790b30d53ec03a0dd1a80f32180`,
+`debaa3c43dc7cfa18a119e7d01ce9b7b668eaf25a2c92685e76f0fdb6bdcf25d`,
+and `bebfa21eb8d0ed05cff0ea6e2ce43ba5745e7a3bd0e243c457abb8a62c139226`.
+
+Exact-head CI built samtools 1.24 and passed the complete consensus oracle on
+Linux x86_64. Native debug and release suites also passed on Linux aarch64,
+macOS x86_64, and macOS aarch64. These performance results cover default
+Bayesian FASTA generation from this coordinate-sorted BAM only. They do not
+establish performance for FASTQ or pileup output, platform profiles, regions,
+SAM or CRAM input, non-default options, or other coverage distributions.
+
 ## FASTA/FASTQ extraction benchmark
 
 The 2026-08-10 extraction gate used implementation revision
@@ -1115,6 +1163,16 @@ values `136a8d3deca43fc072748b537f60df981eeb4d6bab0d10f58f5c2fb466f2b8cf`,
 and `481fb6fe8f02e462a701a9f022fb1c35c239172a546b3301ae44e33bf250287d`.
 
 ## Reproduction
+
+`benchmarks/consensus-vs-samtools-macos.sh` compares default Bayesian FASTA
+output byte-for-byte after every pair, alternates command order, and records
+macOS resource usage and artifact provenance:
+
+```sh
+RSOMICS_COMMIT=3f7fee2 benchmarks/consensus-vs-samtools-macos.sh \
+  target/release/rsomics-bam /path/to/samtools input.coordinate.bam \
+  /path/to/results 20 0
+```
 
 `benchmarks/reset-vs-samtools-macos.sh` performs alternating reset trials,
 compares the complete decoded alignment stream after every pair, and records
