@@ -8,6 +8,7 @@ use crate::{Program, input};
 
 mod bed;
 mod label;
+mod mates;
 mod output;
 mod parts;
 mod tag;
@@ -39,6 +40,7 @@ pub enum Mode<'a> {
         skip_unmapped: bool,
     },
     Genes(&'a Path),
+    Mates,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -110,6 +112,13 @@ pub fn run(input_path: &Path, options: Options<'_>) -> Result<Summary> {
             genes.as_ref().expect("gene mode constructs its exon index"),
             &mut router,
         )?,
+        Mode::Mates => run_mates(
+            &mut reader,
+            &header,
+            input_path,
+            options.format,
+            &mut router,
+        )?,
     };
     let mut summary = router.finish()?;
     summary.records = records;
@@ -146,11 +155,11 @@ fn validate(input_path: &Path, options: Options<'_>) -> Result<()> {
             ));
         }
     }
-    if matches!(options.mode, Mode::Genes(_))
+    if matches!(options.mode, Mode::Genes(_) | Mode::Mates)
         && (options.unaccounted.is_some() || options.unaccounted_header.is_some())
     {
         return Err(RsomicsError::ConfigError(
-            "gene mode does not use an unaccounted output".to_owned(),
+            "gene and mate modes do not use an unaccounted output".to_owned(),
         ));
     }
     if options.zero_pad > 128 {
@@ -192,7 +201,7 @@ fn run_tags(
     let tag = match options.mode {
         Mode::ReadGroup => *b"RG",
         Mode::Tag(tag) => tag,
-        Mode::Parts { .. } | Mode::Genes(_) => unreachable!(),
+        Mode::Parts { .. } | Mode::Genes(_) | Mode::Mates => unreachable!(),
     };
     let require_string = options.mode == Mode::ReadGroup || tag == *b"RG";
     let mut records = 0u64;
@@ -320,6 +329,40 @@ fn run_genes(
                     1
                 }
             };
+            router.write_record_to(destination, &record)?;
+            Ok(true)
+        })?;
+    }
+    Ok((records, 0))
+}
+
+fn run_mates(
+    reader: &mut input::Reader,
+    header: &sam::Header,
+    input_path: &Path,
+    format: Format,
+    router: &mut output::Router,
+) -> Result<(u64, u64)> {
+    let mut records = 0u64;
+    if format == Format::Bam {
+        reader.visit_owned_raw_records(header, input_path, |mut record| {
+            records = increment(records)?;
+            let destination = mates::destination(record.flags());
+            if destination != 2 {
+                mates::project_raw(&mut record);
+            }
+            router.write_raw_to(destination, &record)?;
+            Ok(true)
+        })?;
+    } else {
+        reader.visit_records(header, input_path, |record| {
+            let mut record = sam::alignment::RecordBuf::try_from_alignment_record(header, record)
+                .map_err(RsomicsError::Io)?;
+            records = increment(records)?;
+            let destination = mates::destination(record.flags().bits());
+            if destination != 2 {
+                mates::project(&mut record);
+            }
             router.write_record_to(destination, &record)?;
             Ok(true)
         })?;

@@ -138,6 +138,11 @@ impl Router {
                     router.add_destination(label)?;
                 }
             }
+            Mode::Mates => {
+                for label in [b"R1".as_slice(), b"R2".as_slice(), b"unmap".as_slice()] {
+                    router.add_destination(label)?;
+                }
+            }
             Mode::Tag(_) => {}
         }
         if let Some(path) = options.unaccounted {

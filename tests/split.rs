@@ -797,3 +797,69 @@ fn gene_mode_uses_leftmost_start_and_preserves_targets_on_bed_failure() {
         );
     }
 }
+
+#[test]
+fn mate_mode_matches_the_retained_rseqc_record_bodies() {
+    let directory = tempfile::tempdir().unwrap();
+    for (fixture_name, counts) in [("paired", [2, 2, 2]), ("flags", [6, 1, 0])] {
+        let prefix = directory.path().join(fixture_name);
+        let summary = run(
+            &fixture(&format!("mates/{fixture_name}.bam")),
+            Options {
+                mode: Mode::Mates,
+                output_prefix: &prefix,
+                unaccounted: None,
+                unaccounted_header: None,
+                format: Format::Bam,
+                maximum_outputs: 100,
+                zero_pad: 0,
+                reference: None,
+                additional_threads: 0,
+                program: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            summary
+                .outputs
+                .iter()
+                .map(|output| (output.label.as_str(), output.records))
+                .collect::<Vec<_>>(),
+            [("R1", counts[0]), ("R2", counts[1]), ("unmap", counts[2])]
+        );
+        for label in ["R1", "R2", "unmap"] {
+            assert_eq!(
+                view_body(&directory.path().join(format!("{fixture_name}.{label}.bam"))),
+                fs::read(fixture(&format!("mates/{fixture_name}.{label}.sam"))).unwrap()
+            );
+        }
+    }
+}
+
+#[test]
+fn mate_mode_projects_decoded_records_to_the_same_single_end_contract() {
+    let directory = tempfile::tempdir().unwrap();
+    let prefix = directory.path().join("paired");
+    run(
+        &fixture("mates/paired.bam"),
+        Options {
+            mode: Mode::Mates,
+            output_prefix: &prefix,
+            unaccounted: None,
+            unaccounted_header: None,
+            format: Format::Sam,
+            maximum_outputs: 100,
+            zero_pad: 0,
+            reference: None,
+            additional_threads: 0,
+            program: None,
+        },
+    )
+    .unwrap();
+    for label in ["R1", "R2", "unmap"] {
+        assert_eq!(
+            view_body(&directory.path().join(format!("paired.{label}.sam"))),
+            fs::read(fixture(&format!("mates/paired.{label}.sam"))).unwrap()
+        );
+    }
+}
