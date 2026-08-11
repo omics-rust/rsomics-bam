@@ -731,6 +731,22 @@ mod tests {
         fasta.format = Format::Fasta;
         assert_output("1.out", fasta);
 
+        let mut fasta = Options::simple(0.6);
+        fasta.format = Format::Fasta;
+        fasta.show_deletions = true;
+        assert_output("2.out", fasta);
+
+        let mut fasta = Options::simple(0.6);
+        fasta.format = Format::Fasta;
+        fasta.show_insertions = false;
+        assert_output("3.out", fasta);
+
+        let mut fasta = Options::simple(0.6);
+        fasta.format = Format::Fasta;
+        fasta.show_deletions = true;
+        fasta.show_insertions = false;
+        assert_output("4.out", fasta);
+
         let mut fastq = Options::simple(0.6);
         fastq.format = Format::Fastq;
         assert_output("1q.out", fastq);
@@ -738,6 +754,10 @@ mod tests {
         let mut bayesian = Options::bayesian_without_mapping_quality(0, false);
         bayesian.format = Format::Fastq;
         assert_output("18q.out", bayesian);
+
+        let mut bayesian = Options::bayesian_without_mapping_quality(19, false);
+        bayesian.format = Format::Fastq;
+        assert_output("19q.out", bayesian);
     }
 
     #[test]
