@@ -4,6 +4,73 @@ Performance gates compare each `rsomics-bam` operation with its samtools 1.24
 oracle on representative non-trivial input. Timing begins only after the
 operation-specific complete-output contract has been validated.
 
+## Reference benchmark
+
+The 2026-08-13 reference gate used feature revision
+`796418e274ce67edbb281261e22758db62205e54`, Rust 1.97.1, and
+samtools/HTSlib 1.24 on an Apple M2 Mac mini with 8 GiB of memory and macOS
+26.6.1. One warm-up preceded twenty paired rounds in each reconstruction mode,
+with command order alternating every round. Both tools used their default
+single-threaded alignment decoding. `/usr/bin/time -lp` supplied wall, CPU,
+and maximum-resident-set measurements.
+
+```text
+rsomics-bam reference --quiet input.bam > ours.fa
+samtools reference --quiet input.bam > samtools.fa
+
+rsomics-bam reference --quiet --embedded input.cram > ours.fa
+samtools reference --quiet --embedded input.cram > samtools.fa
+```
+
+| Mode | Tool | Mean wall time | Median wall time | Mean user time | Mean system time | Mean peak RSS | Median peak RSS |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Alignment evidence | `rsomics-bam reference` | 1.1665 s | 1.1600 s | 1.1315 s | 0.0195 s | 10,350,592 bytes | 10,354,688 bytes |
+| Alignment evidence | `samtools reference` | 0.4295 s | 0.4300 s | 0.4100 s | 0.0100 s | 11,643,290 bytes | 11,649,024 bytes |
+| Embedded CRAM | `rsomics-bam reference --embedded` | 0.0330 s | 0.0300 s | 0.0200 s | 0.0100 s | 86,143,795 bytes | 86,147,072 bytes |
+| Embedded CRAM | `samtools reference --embedded` | 0.0705 s | 0.0700 s | 0.0585 s | 0.0010 s | 88,019,763 bytes | 88,023,040 bytes |
+
+Alignment-evidence reconstruction used a 1,000,000-record, 39,015,817-byte
+coordinate-sorted BAM. `rsomics-bam` used 11.10% less mean peak RSS but took
+171.59% more mean wall time, losing all twenty timed pairs. This mode
+establishes a strict memory advantage and does not establish a throughput
+advantage.
+
+Embedded reconstruction used a 6,879-byte CRAM containing 144 alignment
+records and an embedded human chromosome 17 reference. Both tools emitted the
+same 82,548,468-byte FASTA. `rsomics-bam` won all twenty pairs, reduced mean
+wall time by 53.19% for a 2.14-times throughput ratio, and used 2.13% less mean
+peak RSS. The paired mean wall-time difference was -0.0375 seconds with a
+0.004443-second sample standard deviation and a paired t-statistic of -37.749.
+
+For the alignment-evidence fixture, the input and byte-identical output had
+SHA-256 values
+`bfe301fb892a39547e5384629bc52afdf7fb7ffd34e9ec47d3c0df62b0af937f`
+and `376eaa2b31681add8657dde1a4e5237bb7c10fafc66937c3f88084e3d53f3ac2`.
+The timing ledger, summary, paired analysis, and environment record had
+SHA-256 values
+`1eef9dc2fb7be58d5bc4d9ed9124eb4c0ef9eaa6acdedd4e5e81c3f34cc75163`,
+`89720ccb213fb503ae1466b5f65f06b08dedc0518539c34546b76b8d44ad8c76`,
+`bac380d11e54c0996da5fdb968c55b3b80d911bd38da1c6507a3dba4d3a0558a`,
+and `7c80e12435cdfb7387496a54e8b207a6a68c656b3c455e9ae6d253268482ecbe`.
+
+For the embedded fixture, the input and byte-identical output had SHA-256
+values `c56f78490fb9c90433ea9bbe266921c2c82fe76a785780ef65950e5cbd26966f`
+and `1881ae72e01be8bb7e1670617966fe155f63af7540548c73278147e2d3aca533`.
+The timing ledger, summary, paired analysis, and environment record had
+SHA-256 values
+`17ad64c49ae58e02254489bca77d9b9166784abc003bb392c3f2ad53d20c9bdb`,
+`e4ae0c6a777a9f5b2b72f4c4387094a8b404800241f24f6d0a64de289177aca2`,
+`5a3ee993263e677dcff77b2ea86a6bca3125967f0e484b1ea11a61d61480c63e`,
+and `2ff9fab1e7e05f67eda6b98e82520ac7884f3bd13d9556bc68a5c38d0dede8f2`.
+
+The measured `rsomics-bam` and samtools binaries had SHA-256 values
+`8506c030ab9fd92cd475f1b673b66a9f0e38497e6ca1eb8d08f638182b4cd72b`
+and `c265b440b09c4b21d1f25a65963cf907b0d9f9d18caa9382c31104158f89d027`.
+`tools/benchmark-reference.sh`, SHA-256
+`30b6b4f776586972509bcb87fcaacd3ce3ebe0ae4745228835c873a6458dcc32`,
+reproduces complete-output validation, provenance capture, alternating trials,
+and aggregation for either mode.
+
 ## Checksum benchmark
 
 The 2026-08-11 checksum gate used revision
