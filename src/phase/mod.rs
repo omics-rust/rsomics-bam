@@ -278,7 +278,7 @@ impl<'a, W: Write> State<'a, W> {
         if observed.count_ones() < 2 {
             return Ok(());
         }
-        let Some(call) = self.model.call(&mut self.bases) else {
+        let Some(call) = self.model.call(&mut self.bases)? else {
             return Ok(());
         };
         if call.lod < self.options.minimum_lod {

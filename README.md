@@ -52,6 +52,7 @@ cargo install rsomics-bam
 | `split` | Partition alignments by read group, tag, part, gene, or mate |
 | `stats` | Produce comprehensive alignment statistics |
 | `to-bed` | Convert alignments to BED6, BED12, or BEDPE |
+| `tview` | Inspect indexed alignments in a terminal, text grid, or HTML |
 | `view` | Filter records and convert to SAM or BAM |
 
 ```sh
@@ -86,6 +87,7 @@ rsomics-bam sort -m 768M -o sorted.bam input.bam
 rsomics-bam split --genes genes.bed12 -b sample input.bam
 rsomics-bam stats -r reference.fa -o sample.bamstat sample.bam
 rsomics-bam to-bed --split-d -o blocks.bed alignments.bam
+rsomics-bam tview -p chr17:100000 -T reference.fa alignments.bam
 ```
 
 The commands accept SAM, BAM, and CRAM where their help declares those input
@@ -186,6 +188,14 @@ regions use BAI, CSI, or CRAI and retain the requested coordinates in the FASTA
 name. Conflicting evidence, incompatible MD/CIGAR fields, unsorted records, and
 missing embedded blocks fail explicitly. FASTA lines are 60 bases wide, named
 output is transactional, and `--json` requires a separate named FASTA output.
+`tview` opens indexed SAM, BAM, or CRAM in an interactive terminal by default.
+`-d text` emits a deterministic character grid compatible with samtools 1.24;
+`-d html` preserves the same styled cells as escaped semantic markup. An
+indexed FASTA enables reference-aware dots and consensus calls. Sample or read
+group selection, explicit indexes, insertion hiding, decompression workers,
+fixed non-interactive widths, and transactional named output are supported.
+Interactive mode restores the prior terminal screen and raw-mode state on
+normal exit and application failure.
 `depad` removes padded-reference columns from alignment coordinates, CIGARs,
 mate positions, and reference lengths. It accepts SAM, BAM, no-reference CRAM,
 and standard input and writes SAM or BAM. A padded FASTA supplied with `-T` is

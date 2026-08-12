@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::{
     addreplacerg, ampliconclip, ampliconstats, bedcov, calmd, cat, collate, commands, coverage,
     depad, depth, fixmate, flags, flagstat, head, idxstats, index, markdup, merge, mpileup,
-    quickcheck, reheader, reset, samples, sort, split, stats, to_bed, view,
+    quickcheck, reheader, reset, samples, sort, split, stats, to_bed, tview, view,
 };
 
 const META: ToolMeta = ToolMeta {
@@ -102,6 +102,8 @@ enum Command {
     Stats(Box<commands::stats::Arguments>),
     /// Convert alignments to BED intervals
     ToBed(commands::to_bed::Arguments),
+    /// Browse alignments against a reference
+    Tview(commands::tview::Arguments),
     /// Filter and convert alignment records
     View(Box<commands::view::Arguments>),
 }
@@ -214,6 +216,9 @@ pub(crate) enum CommandOutput {
     ToBed {
         summary: to_bed::Summary,
     },
+    Tview {
+        summary: tview::Summary,
+    },
     View {
         summary: view::Summary,
     },
@@ -269,6 +274,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Split(arguments) => commands::split::execute(arguments, cli.output.json),
         Command::Stats(arguments) => commands::stats::execute(*arguments, cli.output.json),
         Command::ToBed(arguments) => commands::to_bed::execute(arguments, cli.output.json),
+        Command::Tview(arguments) => commands::tview::execute(arguments, cli.output.json),
         Command::View(arguments) => commands::view::execute(*arguments, cli.output.json),
     }
 }
@@ -512,6 +518,26 @@ mod tests {
             "-e, --embedded",
             "-q, --quiet",
             "-r, --region <REGION>",
+            "-o, --output <FILE>",
+            "-@, --threads <INT>",
+        ] {
+            assert!(help.contains(option), "missing {option} in {help}");
+        }
+    }
+
+    #[test]
+    fn tview_help_uses_the_shared_command_surface() {
+        let help = rsomics_help::try_parse_from::<Cli, _, _>(["rsomics-bam", "tview", "--help"])
+            .unwrap_err()
+            .to_string();
+        for option in [
+            "-d, --display <MODE>",
+            "-p, --position <REFERENCE[:POSITION]>",
+            "-s, --sample <SAMPLE>",
+            "-w, --width <INT>",
+            "-i, --hide-insertions",
+            "-X, --index <FILE>",
+            "-T, --reference <FASTA>",
             "-o, --output <FILE>",
             "-@, --threads <INT>",
         ] {

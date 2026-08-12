@@ -32,6 +32,7 @@ pub(crate) mod sort;
 pub(crate) mod split;
 pub(crate) mod stats;
 pub(crate) mod to_bed;
+pub(crate) mod tview;
 pub(crate) mod view;
 
 pub(crate) fn parse_memory(value: &str) -> std::result::Result<u64, String> {

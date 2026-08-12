@@ -1,36 +1,20 @@
-#![allow(unsafe_code)]
+use rsomics_common::Result;
 
-use rsomics_common::{Result, RsomicsError};
-use rust_htslib::htslib;
+use crate::errmod::Errmod as Model;
 
-pub(super) struct Errmod(*mut htslib::errmod_t);
+pub(super) struct Errmod(Model);
 
 impl Errmod {
     pub(super) fn new() -> Result<Self> {
-        let inner = unsafe { htslib::errmod_init(1.0 - 0.83) };
-        if inner.is_null() {
-            Err(RsomicsError::InvalidInput(
-                "initializing the genotype likelihood model failed".to_owned(),
-            ))
-        } else {
-            Ok(Self(inner))
-        }
+        Model::new(1.0 - 0.83).map(Self)
     }
 
-    pub(super) fn call(&self, bases: &mut [u16]) -> Option<Call> {
+    pub(super) fn call(&self, bases: &mut [u16]) -> Result<Option<Call>> {
         if bases.is_empty() {
-            return None;
+            return Ok(None);
         }
         let mut likelihoods = [0.0_f32; 16];
-        unsafe {
-            htslib::errmod_cal(
-                self.0,
-                i32::try_from(bases.len()).ok()?,
-                4,
-                bases.as_mut_ptr(),
-                likelihoods.as_mut_ptr(),
-            );
-        }
+        self.0.calculate(bases, 4, &mut likelihoods)?;
 
         let mut best = f32::INFINITY;
         let mut second = f32::INFINITY;
@@ -50,16 +34,10 @@ impl Errmod {
         }
         let lower = genotype >> 2;
         let upper = genotype & 3;
-        (lower != upper).then_some(Call {
+        Ok((lower != upper).then_some(Call {
             alleles: [upper as u8, lower as u8],
             lod: (second - best + 0.499) as i32,
-        })
-    }
-}
-
-impl Drop for Errmod {
-    fn drop(&mut self) {
-        unsafe { htslib::errmod_destroy(self.0) };
+        }))
     }
 }
 

@@ -72,6 +72,8 @@ pub mod split;
 pub mod stats;
 /// Alignment conversion to BED intervals.
 pub mod to_bed;
+/// Terminal, text, and HTML alignment viewer.
+pub mod tview;
 /// Alignment filtering and format conversion.
 pub mod view;
 
@@ -84,6 +86,7 @@ mod bgzf_rewrite;
 mod cli;
 mod commands;
 mod consensus;
+mod errmod;
 mod filter;
 mod header_merge;
 mod header_source;
