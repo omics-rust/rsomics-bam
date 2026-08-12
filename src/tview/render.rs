@@ -33,15 +33,22 @@ pub(super) fn html(viewport: &Viewport, mut output: impl Write) -> Result<()> {
     )
     .map_err(RsomicsError::Io)?;
     for line in &viewport.lines {
+        let mut active = "";
         for cell in line {
-            let class = class(*cell);
-            if class.is_empty() {
-                write_byte(&mut output, cell.symbol)?;
-            } else {
-                write!(output, "<span class=\"{class}\">").map_err(RsomicsError::Io)?;
-                write_byte(&mut output, cell.symbol)?;
-                output.write_all(b"</span>").map_err(RsomicsError::Io)?;
+            let next = class(*cell);
+            if next != active {
+                if !active.is_empty() {
+                    output.write_all(b"</span>").map_err(RsomicsError::Io)?;
+                }
+                if !next.is_empty() {
+                    write!(output, "<span class=\"{next}\">").map_err(RsomicsError::Io)?;
+                }
+                active = next;
             }
+            write_byte(&mut output, cell.symbol)?;
+        }
+        if !active.is_empty() {
+            output.write_all(b"</span>").map_err(RsomicsError::Io)?;
         }
         output.write_all(b"\n").map_err(RsomicsError::Io)?;
     }
@@ -51,7 +58,7 @@ pub(super) fn html(viewport: &Viewport, mut output: impl Write) -> Result<()> {
     output.flush().map_err(RsomicsError::Io)
 }
 
-fn class(cell: super::Cell) -> String {
+fn class(cell: super::Cell) -> &'static str {
     let color = match cell.color {
         super::CellColor::Default => "",
         super::CellColor::Blue => "blue",
@@ -63,10 +70,19 @@ fn class(cell: super::Cell) -> String {
         super::CellColor::Red => "red",
     };
     match (color.is_empty(), cell.underline) {
-        (true, false) => String::new(),
-        (true, true) => "underline".to_owned(),
-        (false, false) => color.to_owned(),
-        (false, true) => format!("{color} underline"),
+        (true, false) => "",
+        (true, true) => "underline",
+        (false, false) => color,
+        (false, true) => match cell.color {
+            super::CellColor::Default => unreachable!(),
+            super::CellColor::Blue => "blue underline",
+            super::CellColor::Green => "green underline",
+            super::CellColor::Yellow => "yellow underline",
+            super::CellColor::White => "white underline",
+            super::CellColor::Cyan => "cyan underline",
+            super::CellColor::Magenta => "magenta underline",
+            super::CellColor::Red => "red underline",
+        },
     }
 }
 
@@ -94,4 +110,56 @@ fn escape(value: &str) -> String {
         }
     }
     escaped
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tview::{Cell, CellColor};
+
+    #[test]
+    fn html_groups_adjacent_cells_with_the_same_style() {
+        let viewport = Viewport {
+            reference: "chr1".to_owned(),
+            reference_length: 10,
+            references: vec!["chr1".to_owned()],
+            start: 1,
+            width: 5,
+            alignment_rows: 0,
+            lines: vec![vec![
+                Cell {
+                    symbol: b'A',
+                    color: CellColor::Blue,
+                    underline: false,
+                },
+                Cell {
+                    symbol: b'C',
+                    color: CellColor::Blue,
+                    underline: false,
+                },
+                Cell {
+                    symbol: b'G',
+                    color: CellColor::Default,
+                    underline: false,
+                },
+                Cell {
+                    symbol: b'T',
+                    color: CellColor::Default,
+                    underline: true,
+                },
+                Cell {
+                    symbol: b'&',
+                    color: CellColor::Default,
+                    underline: true,
+                },
+            ]],
+        };
+        let mut output = Vec::new();
+        html(&viewport, &mut output).unwrap();
+        let output = String::from_utf8(output).unwrap();
+        assert!(
+            output
+                .contains("<span class=\"blue\">AC</span>G<span class=\"underline\">T&amp;</span>")
+        );
+    }
 }
