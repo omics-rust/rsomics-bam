@@ -56,6 +56,8 @@ mod program;
 /// Alignment integrity checks.
 pub mod quickcheck;
 mod raw_aux;
+/// Reference reconstruction from alignment evidence.
+pub mod reference;
 /// Compressed-block BAM header replacement.
 pub mod reheader;
 /// Alignment reset to unaligned reads.

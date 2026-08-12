@@ -88,6 +88,8 @@ enum Command {
     Quickcheck(commands::quickcheck::Arguments),
     /// Replace a BAM header without reencoding alignment blocks
     Reheader(commands::reheader::Arguments),
+    /// Reconstruct reference sequences from alignment evidence
+    Reference(commands::reference::Arguments),
     /// Restore primary alignments to unaligned reads
     Reset(commands::reset::Arguments),
     /// List samples declared by alignment read groups
@@ -191,6 +193,9 @@ pub(crate) enum CommandOutput {
     Reheader {
         summary: reheader::Summary,
     },
+    Reference {
+        summary: crate::reference::Summary,
+    },
     Reset {
         summary: reset::Summary,
     },
@@ -257,6 +262,7 @@ fn execute(cli: Cli) -> Result<CommandOutput> {
         Command::Phase(arguments) => commands::phase::execute(arguments, cli.output.json),
         Command::Quickcheck(arguments) => commands::quickcheck::execute(arguments, cli.output.json),
         Command::Reheader(arguments) => commands::reheader::execute(arguments, cli.output.json),
+        Command::Reference(arguments) => commands::reference::execute(arguments, cli.output.json),
         Command::Reset(arguments) => commands::reset::execute(arguments, cli.output.json),
         Command::Samples(arguments) => commands::samples::execute(arguments, cli.output.json),
         Command::Sort(arguments) => commands::sort::execute(arguments, cli.output.json),
@@ -492,6 +498,23 @@ mod tests {
                 .unwrap_err()
                 .to_string();
         for option in ["-o, --output", "-v, --verbose", "-e, --encodings"] {
+            assert!(help.contains(option), "missing {option} in {help}");
+        }
+    }
+
+    #[test]
+    fn reference_help_uses_the_shared_command_surface() {
+        let help =
+            rsomics_help::try_parse_from::<Cli, _, _>(["rsomics-bam", "reference", "--help"])
+                .unwrap_err()
+                .to_string();
+        for option in [
+            "-e, --embedded",
+            "-q, --quiet",
+            "-r, --region <REGION>",
+            "-o, --output <FILE>",
+            "-@, --threads <INT>",
+        ] {
             assert!(help.contains(option), "missing {option} in {help}");
         }
     }

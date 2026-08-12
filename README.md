@@ -4,8 +4,8 @@
 inspection, filtering, conversion, validation, collation, mate repair, sorting,
 compressed file editing, read-group editing, duplicate marking, FASTQ import,
 padded-reference projection, alignment reset, amplicon sequencing, consensus
-calling, pileup, read-backed phasing, alignment partitioning, and content-checksum and
-alignment-to-interval workflows.
+calling, reference recovery, pileup, read-backed phasing, alignment partitioning,
+content checksums, and alignment-to-interval workflows.
 
 ## Install
 
@@ -45,6 +45,7 @@ cargo install rsomics-bam
 | `phase` | Call and phase heterozygous SNPs from aligned reads |
 | `quickcheck` | Validate headers and format-specific end markers |
 | `reheader` | Replace a BAM header without reencoding alignment blocks |
+| `reference` | Recover reference FASTA from MD evidence or embedded CRAM blocks |
 | `reset` | Restore primary alignments to unaligned reads |
 | `samples` | List samples and other read-group metadata |
 | `sort` | Sort alignments with bounded memory and external runs |
@@ -79,6 +80,7 @@ rsomics-bam markdup -r fixed-and-sorted.bam -o deduplicated.bam
 rsomics-bam mpileup -f reference.fa -Q 20 input.bam
 rsomics-bam phase -o phase.txt -b haplotypes input.bam
 rsomics-bam reheader replacement.sam input.bam -o reheadered.bam
+rsomics-bam reference --embedded -r chr17:1-100000 sample.cram -o chr17.fa
 rsomics-bam reset --keep-tag RG,BC aligned.bam -o unmapped.bam
 rsomics-bam sort -m 768M -o sorted.bam input.bam
 rsomics-bam split --genes genes.bed12 -b sample input.bam
@@ -177,6 +179,13 @@ mapped records without query sequence with an explicit warning, and can rewrite
 reference-matching query bases to `=`. Existing correct tags retain their
 position; corrected tags follow samtools replacement order. Named outputs are
 transactional. BAQ, mapping-quality adjustment, and CRAM output are not exposed.
+`reference` reconstructs FASTA from coordinate-sorted SAM, BAM, CRAM, or
+standard input using query sequence, CIGAR, and MD evidence. `--embedded`
+extracts reference blocks directly from CRAM without decoding records. Indexed
+regions use BAI, CSI, or CRAI and retain the requested coordinates in the FASTA
+name. Conflicting evidence, incompatible MD/CIGAR fields, unsorted records, and
+missing embedded blocks fail explicitly. FASTA lines are 60 bases wide, named
+output is transactional, and `--json` requires a separate named FASTA output.
 `depad` removes padded-reference columns from alignment coordinates, CIGARs,
 mate positions, and reference lengths. It accepts SAM, BAM, no-reference CRAM,
 and standard input and writes SAM or BAM. A padded FASTA supplied with `-T` is
@@ -242,6 +251,8 @@ record-matched for SAM, BAM, and CRAM partitions after normalizing the
 upstream evidence-row iteration order and known marker-index defect.
 Coverage summaries, BED coverage totals, custom indexes, filtering, depth
 limits, regions, and CRAM quality semantics are byte-matched to samtools 1.24.
+Reference recovery is byte-matched in MD, embedded-block, and indexed-region
+modes.
 Read-group editing is field-matched across new, existing, implicit, overwrite,
 orphan, SAM, BAM, CRAM, and non-string-tag cases.
 FASTQ import is field-matched for positional and explicit input modes, read

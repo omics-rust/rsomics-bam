@@ -24,6 +24,7 @@ pub(crate) mod merge;
 pub(crate) mod mpileup;
 pub(crate) mod phase;
 pub(crate) mod quickcheck;
+pub(crate) mod reference;
 pub(crate) mod reheader;
 pub(crate) mod reset;
 pub(crate) mod samples;
