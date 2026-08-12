@@ -639,6 +639,7 @@ fn finish_pty(
             Err(error) => panic!("reading PTY: {error}"),
         }
         if let Some(status) = child.try_wait().unwrap() {
+            drain_pty(master, &mut transcript);
             return (status, transcript);
         }
         if Instant::now() >= deadline {
@@ -649,6 +650,28 @@ fn finish_pty(
             );
         }
         thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[cfg(unix)]
+fn drain_pty(master: &mut File, transcript: &mut Vec<u8>) {
+    let mut deadline = Instant::now() + Duration::from_millis(20);
+    loop {
+        let mut buffer = [0; 16 * 1024];
+        match master.read(&mut buffer) {
+            Ok(0) => return,
+            Ok(length) => {
+                transcript.extend_from_slice(&buffer[..length]);
+                deadline = Instant::now() + Duration::from_millis(20);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                if Instant::now() >= deadline {
+                    return;
+                }
+                thread::sleep(Duration::from_millis(1));
+            }
+            Err(error) => panic!("draining PTY: {error}"),
+        }
     }
 }
 
