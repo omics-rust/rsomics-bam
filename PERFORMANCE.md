@@ -4,6 +4,80 @@ Performance gates compare each `rsomics-bam` operation with its samtools 1.24
 oracle on representative non-trivial input. Timing begins only after the
 operation-specific complete-output contract has been validated.
 
+## Tview benchmark
+
+The 2026-08-13 tview gate used feature revision
+`f871d4edac5776c2af86d5af2f3e9c2bebbd3315`, Rust 1.97.1, and
+samtools/HTSlib 1.24 on an Apple M2 Mac mini with 8 GiB of memory and macOS
+26.6.1. The indexed fixture contains 8,001 randomized 1,000-base alignments
+starting at the same coordinate, exercising the upstream 8,000-read viewport
+limit. Its 2,521,874-byte BAM and 2,009,084-byte CRAM have SHA-256 values
+`79240a9836c6d463dfb727f5633589d2a671ffac65ddbb09df7f799440584293`
+and `3d03cd7f2afe3f6876bfbc44c361f1ceba6529ed80f7c5e60c06d955b08e77af`.
+The indexed 10,000-base reference has SHA-256
+`2976a84ba5f827bce1670a5249ba5ee9a1a2b1d385661fa3ef641c07869f77b5`.
+
+One complete-output pass preceded twenty paired rounds in each format, with
+command order alternating every round. The viewport began at `chr1:1001`, was
+120 columns wide, and rsomics used four additional alignment-decoding workers.
+`/usr/bin/time -lp` supplied wall, CPU, and maximum-resident-set measurements.
+
+| Input | Format | Tool | Mean wall | Median wall | Mean user | Mean system | Mean peak RSS | Median peak RSS |
+|---|---|---|---:|---:|---:|---:|---:|---:|
+| BAM | Text | rsomics | 0.2000 s | 0.2000 s | 0.1920 s | 0.0100 s | 79,883,469 bytes | 79,831,040 bytes |
+| BAM | Text | samtools | 0.2515 s | 0.2500 s | 0.2360 s | 0.0075 s | 73,041,510 bytes | 73,039,872 bytes |
+| BAM | HTML | rsomics | 0.3000 s | 0.3000 s | 0.2805 s | 0.0210 s | 79,837,594 bytes | 79,839,232 bytes |
+| BAM | HTML | samtools | 0.2520 s | 0.2500 s | 0.2365 s | 0.0075 s | 73,010,381 bytes | 73,039,872 bytes |
+| CRAM | Text | rsomics | 0.3125 s | 0.3100 s | 0.3010 s | 0.0120 s | 82,938,266 bytes | 83,050,496 bytes |
+| CRAM | Text | samtools | 0.3155 s | 0.3200 s | 0.2925 s | 0.0100 s | 130,262,630 bytes | 130,252,800 bytes |
+| CRAM | HTML | rsomics | 0.4110 s | 0.4100 s | 0.3870 s | 0.0245 s | 82,984,960 bytes | 83,083,264 bytes |
+| CRAM | HTML | samtools | 0.3250 s | 0.3200 s | 0.2990 s | 0.0110 s | 129,835,008 bytes | 130,269,184 bytes |
+
+Both BAM and CRAM Text runs produced the same complete 968,363-byte grid as
+samtools, with SHA-256
+`e8af8bc6756e1c61b6dca4e12768267468b87200a37d83f799e657d90f5608a9`.
+On BAM, rsomics won all twenty Text pairs and reduced mean wall time by 20.48%.
+The paired mean difference was -0.0515 seconds with a 0.006708-second sample
+standard deviation and a paired t-statistic of -34.334; mean peak RSS was
+9.37% higher. On CRAM, Text wall time was effectively at parity, while mean
+peak RSS was 36.33% lower. The Text path therefore supplies both a strict BAM
+throughput advantage and a strict CRAM resource-use advantage.
+
+The 26,893,242-byte rsomics HTML document has SHA-256
+`461377043efdfb0a95108694de7d563851347c3ab8b5cc67a8f428fcf490d0bb`.
+Its semantic cell contract is tested independently because samtools uses a
+different HTML source layout. Rsomics HTML was 19.05% slower on BAM and 26.46%
+slower on CRAM, so no HTML throughput advantage is claimed. It retained the
+36.09% CRAM mean-RSS reduction.
+
+Twenty pseudo-terminal trials measured one rightward move after initial draw,
+ending after 20 ms without new terminal bytes. Median redraw completion was
+0.216675479 seconds for BAM and 0.333513209 seconds for CRAM. These are product
+latency measurements, not a samtools comparison.
+
+For BAM, the timing ledger, summary, paired analysis, interactive ledger, and
+environment record have SHA-256 values
+`6362ae16c3e0527ece0ced2d82501729b1f977c9cd08225dfcff27021de4a179`,
+`1972900c79ecfc3edb97f2e0a919c5525c6b13aeefe0396115247e60427cc2bf`,
+`86be32cf8e3fc1276ecbcd1eddb33b5590e9afa339d90aae980895715556106f`,
+`fcf2205f6c59ebf216664f00c7f0e9a483997d91c56044f61814916775c7c11e`,
+and `16311cceaf5daf427b26ab92eecb83378832a64506da227bb5380547c1fce8bc`.
+The corresponding CRAM values are
+`497fe5bf690afbba167d38124bcb590a58f3ed993c03147c7de1cf5b03bdec64`,
+`9c42e9bbf72fdb95180bcf7856685bbf7210e3eab28ad20b8f7bc3890b1d079e`,
+`3829a65158e0a5c27a1d5a448048945630511140a02b431745981aedf19aedbb`,
+`b28ff0c50620f8074cf6631ea212114e27a0d54be1669a4113e9522ccf0abc08`,
+and `6520158a61e561fd069b144ad0bf3b3e198ef18f6ee421cebc690f805006ace6`.
+
+The measured rsomics and samtools binaries have SHA-256 values
+`473567df276c838448e47afd93673c0cc01067f6d18f75288647c8a3ae0b4e72`
+and `20fdd732b0ee67a8da9d70ae93b5890ca71d95793ab754c4d832c0ede1e20e1a`.
+`tools/benchmark-tview.sh` and `tools/tview-pty.py`, with SHA-256 values
+`2b75e01f6c1cdc40cdd03c0f8b901e7c39a5111ecc6d3923004f7bea9ca81031`
+and `72d94fa8cf9015e3e4502da5cabb24d04aed99019a6de012fa1bdb5897e11b70`,
+reproduce the complete-output validation, provenance capture, alternating
+trials, paired aggregation, and terminal measurement.
+
 ## Reference benchmark
 
 The 2026-08-13 reference gate used feature revision
