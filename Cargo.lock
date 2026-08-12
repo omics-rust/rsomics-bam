@@ -1128,9 +1128,9 @@ dependencies = [
 
 [[package]]
 name = "rsomics-common"
-version = "0.12.2"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a6f75d9418b63e807e9e33ec93bebea77469a3adeff9772b22674a5e021b413"
+checksum = "d9a4246711f13a0fdd9398e7eab3a95b991ac555a52c98f6518252c037508401"
 dependencies = [
  "clap",
  "same-file",
