@@ -29,10 +29,42 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Prepare hosted build storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_HOME="$RUNNER_TEMP/cargo-home"
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/cargo-target"
+          export RUSTUP_HOME="$RUNNER_TEMP/rustup-home"
+          export TMPDIR="$RUNNER_TEMP/scratch"
+          mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR" "$RUSTUP_HOME" "$TMPDIR"
+          printf 'CARGO_HOME=%s\nCARGO_TARGET_DIR=%s\nRUSTUP_HOME=%s\nTMPDIR=%s\n' \
+            "$CARGO_HOME" "$CARGO_TARGET_DIR" "$RUSTUP_HOME" "$TMPDIR" >> "$GITHUB_ENV"
+          python3 -B - <<'PY'
+          import os, shutil
+          from pathlib import Path
+          runner = Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
+          assert all(Path(os.environ[key]).resolve(strict=True).is_relative_to(runner)
+                     for key in ('CARGO_HOME', 'CARGO_TARGET_DIR', 'RUSTUP_HOME', 'TMPDIR'))
+          assert shutil.disk_usage(runner).free > 2 * 2**30
+          PY
+
       - name: Install Rust 1.91
         uses: dtolnay/rust-toolchain@1.91.0
         with:
           components: clippy,rustfmt
+
+      - name: Verify resolved build target
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo metadata --no-deps --locked --format-version 1 > "$RUNNER_TEMP/bam-metadata.json"
+          python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          metadata = json.loads((Path(os.environ['RUNNER_TEMP']) / 'bam-metadata.json').read_text())
+          assert Path(metadata['target_directory']).resolve() == Path(os.environ['CARGO_TARGET_DIR']).resolve()
+          PY
 
       - name: Format
         if: matrix.target == 'linux-x86_64'
